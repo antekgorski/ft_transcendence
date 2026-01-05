@@ -53,8 +53,8 @@ git push origin feature/your-feature-name
 Once your feature is complete and tested locally, it needs to be integrated with the rest of the team's work.
 
 1. **Open a Pull Request (PR):** Go to GitHub and open a PR from `feature/your-feature-name` into `develop`.
-2. **Code Review:** At least one other team member should review the code.
-3. **Merge:** Once approved, merge the PR into `develop`. This triggers the develop environment update.
+2. **Code Review:** At least 2 team members must review and approve the code. One reviewer must always be `dmodrzej` (Tech Lead/Architect).
+3. **Merge:** Once approved by both reviewers, merge the PR into `develop`. This triggers the develop environment update.
 
 ### Phase 4: Promotion to Main (Production)
 
