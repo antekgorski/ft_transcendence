@@ -1,82 +1,86 @@
-# Zasady pracy na GitHubie – Transcendence
+# GitHub Workflow Rules – Transcendence
 
-## 📋 Spis treści
+## 📋 Table of Contents
 
 - [Branching](#branching)
 - [Workflow](#workflow)
 - [Pull Request](#pull-request)
-- [Commity](#commity)
+- [Commits](#commits)
 
 ---
 
 ## Branching
 
-### Struktura branchy
+### Branch Structure
 
-- **`main`** – tylko stabilny kod (brak commitów bezpośrednich)
-- **`develop`** – branch roboczy zespołu
-- **`typ/*`** – każda funkcjonalność osobno  
-  - Przykład: `typ/auth-login`
+- **`main`** – stable code only (no direct commits)
+- **`develop`** – team's working branch
+- **`type/*`** – each feature separately
+  - Example: `feature/auth-login`
 
 ---
 
 ## Workflow
 
-1. **Start z `develop`**
-2. **Tworzysz `feature/*`**
-3. **Małe, logiczne commity**
+1. **Start from `develop`**
+2. **Create `feature/*`**
+3. **Small, logical commits**
 4. **Pull Request → `develop`**
 5. **Review → merge**
 
-### ⚠️ Ważne uwagi
+### ⚠️ Important Notes
 
-> **Uwaga 1:** Nie mergujemy `feature/*` do `main` bezpośrednio!
+> **Note 1:** Do not merge `feature/*` directly into `main`!
 
-> **Uwaga 2:** Przed mergem `feature/*` do `develop` zrób rebase na `develop`, aby uniknąć konfliktów.
+> **Note 2:** Before merging `feature/*` into `develop`, rebase onto
+> `develop` to avoid conflicts.
 
-> **Uwaga 3:** Regularnie aktualizuj swój `feature/*` z `develop`, aby być na bieżąco.
+> **Note 3:** Regularly update your `feature/*` from `develop` to stay
+> up to date.
 
-> **Uwaga 4:** Używaj opisowych nazw branchy i commitów, aby ułatwić zrozumienie zmian.
+> **Note 4:** Use descriptive branch and commit names to make changes
+> easier to understand.
 
 ---
 
 ## Pull Request
 
-### Zasady
+### Rules
 
-- **Jedna funkcjonalność = jeden PR**
-- **Wymagane 2 approve:**
+- **One feature = one PR**
+- **2 approvals required:**
   - Tech Lead
-  - 1 dowolny członek zespołu
-- **PR musi mieć opis**
+  - 1 other team member
+- **PR must have a description**
 
-### 📘 Dodatkowe zasoby
+### 📘 Additional Resources
 
-- [Code Review - zasady i dobre praktyki](https://www.notion.so/zasady-code-review-good-practices-2d074a5f4559809cafa7f5e8cfb4581a)
+- [Code Review - Rules and Best Practices](https://www.notion.so/zasady-code-review-good-practices-2d074a5f4559809cafa7f5e8cfb4581a)
 
 ---
 
-## Commity
+## Commits
 
 ### Format
 
 ```bash
-git commit -m "typ" -m "krótki opis"
+git commit -m "type" -m "short description"
 ```
 
-### Typy commitów
+### Commit Types
 
-| Typ | Opis |
-|-----|------|
-| `feature:` | Nowa funkcja |
-| `fix:` | Poprawka błędu |
-| `refactor:` | Porządki w kodzie |
-| `docs:` | Dokumentacja |
-| `test:` | Testy |
-| `chore:` | Konfiguracja |
+| Type        | Description        |
+|-------------|--------------------|
+| `feature:`  | New feature        |
+| `fix:`      | Bug fix            |
+| `refactor:` | Code cleanup       |
+| `docs:`     | Documentation      |
+| `test:`     | Tests              |
+| `chore:`    | Configuration      |
 
-### Przykłady
+### Examples
 
 ```bash
-git commit -m "feature" -m "dodano logowanie użytkownika"
-git commit -m "fix" -m "naprawiono błąd walidacji emaila"
+git commit -m "feature" -m "added user login"
+git commit -m "fix" -m "fixed email validation bug"
+```
