@@ -79,4 +79,4 @@ git commit -m "typ" -m "krótki opis"
 
 ```bash
 git commit -m "feature" -m "dodano logowanie użytkownika"
-git commit -m "fix" -m "napriono błąd walidacji emaila"
+git commit -m "fix" -m "naprawiono błąd walidacji emaila"
