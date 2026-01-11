@@ -38,6 +38,14 @@ function App() {
 
       if (response.data.success) {
         setResults(response.data);
+        
+        // Refresh table list if query affects table structure
+        const upperQuery = query.trim().toUpperCase();
+        if (upperQuery.startsWith('CREATE TABLE') || 
+            upperQuery.startsWith('DROP TABLE') || 
+            upperQuery.startsWith('ALTER TABLE')) {
+          fetchTables();
+        }
       }
     } catch (err) {
       if (err.response && err.response.data) {
