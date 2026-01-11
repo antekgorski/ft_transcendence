@@ -14,7 +14,6 @@ ALLOWED_HOSTS = os.environ['ALLOWED_HOSTS'].split(',')
 
 # Minimal apps for API-only project
 INSTALLED_APPS = [
-    'django.contrib.contenttypes',  # Required by Django
     'rest_framework',
     'corsheaders',
 ]
