@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 import API_BASE_URL from './config';
+import WelcomePage from './pages/WelcomePage';
 
 function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
@@ -74,6 +76,11 @@ function App() {
   const handleTableClick = async (tableName) => {
     setQuery(`SELECT * FROM ${tableName} LIMIT 10;`);
   };
+
+  // Pokaż WelcomePage jeśli nie zalogowany
+  if (!isLoggedIn) {
+    return <WelcomePage onLogin={() => setIsLoggedIn(true)} />;
+  }
 
   return (
     <div className="app">
