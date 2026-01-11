@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # Backend (Django)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ft_transcendence_backend
+    env_file:
+      - .env
+    environment:
+      DEBUG: ${DEBUG}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_SSLMODE: ${DB_SSLMODE}
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    networks:
+      - transcendence_network
+    command: python manage.py runserver 0.0.0.0:8000
+
+  # Frontend (React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ft_transcendence_frontend
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - transcendence_network
+    environment:
+      - REACT_APP_API_URL=${REACT_APP_API_URL}
+
+networks:
+  transcendence_network:
+    driver: bridge
