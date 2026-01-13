@@ -1,0 +1,14 @@
+testowanie prostej rejestracji
+
+cd ~/ft_transendence/backend
+source .venv/bin/activate
+python manage.py migrate
+python manage.py runserver
+
+na drugim terminalu
+curl -X POST http://127.0.0.1:8000/api/auth/register/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "test_user", "email": "test@example.com", "password": "Secret123!"}'
+
+Uwagi:
+tymczasowa zmiana w settings.py na database
