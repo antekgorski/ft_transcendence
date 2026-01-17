@@ -69,51 +69,57 @@ The application is built as a microservices-based Single Page Application
 
 ```mermaid
 flowchart TD
-    subgraph ClientSide [Client Side: User Browser]
+    subgraph Client [Client Side: User Browser]
         direction TB
-        UI[React UI]
-        Logic[App Logic / State]
-        WS_Client[WebSocket Client]
+        UI[<b>React UI</b><br/>Styled with Tailwind CSS]
+        Logic[<b>App Runtime</b><br/>State & Business Logic]
+        WS_Client[<b>WebSocket Client</b><br/>Real-time communication]
     end
 
     subgraph Gateway [Entry Point]
-        Nginx{Nginx Reverse Proxy}
+        Nginx{Nginx Proxy}
     end
 
-    subgraph AppServices [Server Side: Docker Architecture]
-        subgraph Serving [Static Delivery]
-            Frontend[Frontend Container]
-        end
-
-        subgraph LogicLayer [Application API]
-            Backend[Backend - Django ASGI]
-            Redis[(Redis 7)]
-        end
+    subgraph DockerServices [Server Side: Docker Containers]
+        FE[<b>Frontend Service</b><br/>Serves Static Assets]
+        BE[<b>Backend Service</b><br/>Django ASGI / Daphne]
+        RD[(<b>Redis 7</b><br/>Channel Layer / Cache)]
     end
 
-    subgraph Data [Persistence]
-        PostgreSQL[(PostgreSQL Neon)]
+    subgraph External [Persistence]
+        DB[(PostgreSQL Neon)]
     end
 
-    %% Phase 1: Serving the Application
-    UI -.->|1. Request Page| Nginx
-    Nginx -.->|2. Get HTML/JS/CSS| Frontend
-    Frontend -.->|3. Assets Bundle| Nginx
+    %% Step 1: Delivery of the frontend application
+    UI -.->|1. Fetch App| Nginx
+    Nginx -.->|2. Request Bundle| FE
+    FE -.->|3. JS/CSS Bundle| Nginx
     Nginx -.->|4. Load App| UI
 
-    %% Phase 2: Runtime Communication
+    %% Step 2: Runtime API communication
     Logic <==>|5. REST API Calls| Nginx
-    WS_Client <==>|6. WebSocket Stream| Nginx
-    Nginx <==>|7. Proxy to Django| Backend
+    WS_Client <==>|6. WebSocket Traffic| Nginx
+    Nginx <==>|7. Proxy to Django| BE
 
-    %% Internal Backend Flow
-    Backend <-->|Channel Layer / Cache| Redis
-    Backend ---|SQL Queries| PostgreSQL
+    %% Step 3: Server-side data management
+    BE <-->|Pub/Sub| RD
+    BE <-->|SQL| DB
+
+    %% Styling
+    classDef browser fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef container fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef proxy fill:#fff,stroke:#333,stroke-dasharray: 5 5;
+    classDef storage fill:#dfd,stroke:#333,stroke-width:2px;
+    
+    class UI,Logic,WS_Client browser;
+    class FE,BE,RD container;
+    class Nginx proxy;
+    class DB storage;
 ```
 
 > **Architecture Note:**
-> 1. **Static Serving Phase:** The browser initially contacts Nginx to download the React application code stored in the **Frontend** container.
-> 2. **Runtime Phase:** Once loaded, the React application executes entirely in the user's browser and communicates with the **Backend** via Nginx using REST APIs and WebSockets.
+> 1. **Static Serving Phase:** The browser initially contacts Nginx to download the application (React + Tailwind CSS bundle) stored in the **Frontend** container.
+> 2. **Runtime Phase:** Once the application is loaded in the browser, it executes locally. It communicates with the **Backend** via Nginx for dynamic data (REST API) and real-time multiplayer features (WebSockets).
 
 ### Documentation
 
