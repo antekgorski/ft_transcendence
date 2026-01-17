@@ -1,5 +1,4 @@
-This project has been created as part of the 42 curriculum by dmodrzej[, agorski[, mbany[, ltomasze]]].
-
+This project has been created as part of the 42 curriculum by dmodrzej[, agorski[, mbany[, ltomasze[, and gbuczyns]]]].
 
 ---
 
@@ -78,6 +77,7 @@ provide:
 | **dmodrzej** | **Technical Lead**     | Architecture (React+Django), DevOps, WS       |
 | **agorski**  | **Project Manager**    | Sprint planning, deadlines, Agile process     |
 | **ltomasze** | **Developer**          | Game logic, API development, UI integration   |
+| **gbuczyns** | **Developer**          | Game logic, API development, UI integration   |
 
 ---
 
@@ -109,33 +109,138 @@ provide:
 
 # Technical Stack
 
-<!--
-- Frontend technologies and frameworks used.
-- Backend technologies and frameworks used.
-- Database system and why it was chosen.
-- Any other significant technologies or libraries.
-- Justification for major technical choices.
--->
+### Frontend
+- **React**: Component-based SPA framework for dynamic UI
+- **Three.js**: 3D graphics library for immersive battleship board visualization
+- **Nginx**: Web server for serving static assets and reverse proxy
+
+### Backend
+- **Django 4.2**: Python web framework with built-in admin, ORM, and security features
+- **Django REST Framework**: RESTful API development
+- **Channels & Daphne**: WebSocket support for real-time multiplayer gameplay
+- **Django Simple JWT**: Token-based authentication and session management
+
+### Database & Cache
+- **PostgreSQL 15**: Robust relational database chosen for ACID compliance, complex queries, and excellent Django ORM integration
+- **Redis 7**: In-memory data store for WebSocket channel layers and session caching
+
+### Infrastructure
+- **Docker & Docker Compose**: Containerization for consistent development and deployment environments
+- **OAuth 2.0**: 42 Intra integration for remote authentication
+
+### Key Technical Choices
+- **Django + React architecture**: Separates concerns between API (Django) and presentation (React), enabling independent scaling and development
+- **PostgreSQL over NoSQL**: Relational data model suits user management, game history, and friendship systems with enforced data integrity
+- **WebSockets via Channels**: Real-time bidirectional communication essential for synchronous multiplayer gameplay
+- **Docker-based deployment**: Ensures reproducibility across environments and simplifies microservices orchestration
 
 ---
 
 # Database Schema
 
-<!--
-- Visual representation or description of the database structure.
-- Tables/collections and their relationships.
-- Key fields and data types.
--->
+```mermaid
+erDiagram
+    User ||--o{ PlayerStats : "has"
+    User ||--o{ Game : "player_1"
+    User ||--o{ Game : "player_2"
+    User ||--o{ Game : "winner"
+    User ||--o{ Friendship : "initiates"
+    User ||--o{ Friendship : "receives"
+    User ||--o{ Notification : "receives"
+    
+    User {
+        uuid id PK
+        string username UK
+        string email UK
+        string password_hash
+        string display_name
+        string avatar_url
+        string language
+        string oauth_provider
+        string oauth_id
+        boolean is_active
+        json notification_preferences
+        timestamp created_at
+        timestamp last_login
+    }
+    
+    Notification {
+        uuid id PK
+        uuid user_id FK
+        string type
+        string title
+        text message
+        json data
+        boolean is_read
+        timestamp read_at
+        timestamp created_at
+        timestamp expires_at
+        string action_url
+    }
+    
+    PlayerStats {
+        uuid id PK
+        uuid user_id FK
+        int games_played
+        int games_won
+        int games_lost
+        int total_shots
+        int total_hits
+        float accuracy_percentage
+        int longest_win_streak
+        int current_win_streak
+        int best_game_duration_seconds
+        timestamp updated_at
+    }
+    
+    Game {
+        uuid id PK
+        uuid player_1_id FK
+        uuid player_2_id FK "null for AI opponent"
+        string game_type "pvp|ai"
+        uuid winner_id FK
+        int duration_seconds
+        int player_1_shots
+        int player_1_hits
+        int player_2_shots
+        int player_2_hits
+        timestamp started_at
+        timestamp ended_at
+    }
+    
+    Friendship {
+        uuid id PK
+        uuid requester_id FK
+        uuid addressee_id FK
+        string status "pending|accepted|blocked"
+        timestamp created_at
+        timestamp updated_at
+    }
+```
 
 ---
 
 # Features List
 
-<!--
-- Complete list of implemented features.
-- Which team member(s) worked on each feature.
-- Brief description of each feature's functionality.
--->
+### User Management
+- **User Registration & Login**: Secure account creation with password hashing, email validation, and JWT-based authentication
+- **OAuth 2.0 Authentication**: Single sign-on via 42 Intra for streamlined access
+- **User Profiles**: Customizable display names, avatar uploads, and language preferences
+- **Session Management**: JWT refresh tokens for secure, persistent sessions
+
+### Social Features
+- **Friendship System**: Send, accept, or block friend requests with real-time status updates
+- **Notifications**: In-app alerts for friend requests, game invitations, and match results with customizable preferences
+
+### Gameplay
+- **3D Battleship Game**: Full-featured battleship with Three.js-powered 3D board visualization
+- **Real-time Multiplayer**: WebSocket-based synchronous PvP gameplay with live board updates
+- **AI Opponent**: Strategic bot using probability-grid algorithms for challenging single-player experience
+- **Game History**: Persistent match records with detailed statistics (shots, hits, duration, winner)
+
+### Statistics & Leaderboards
+- **Player Statistics**: Track games played, win/loss ratio, accuracy percentage, and win streaks
+- **Leaderboard System**: Global rankings based on wins, accuracy, and other performance metrics
 
 ---
 
@@ -150,34 +255,31 @@ provide:
 - Which team member(s) worked on each module.
 -->
 
-### Web (3 Points)
+### Web (9 Points)
 
-- **Major Framework:** Django & React (2 pts)
-- **Use of an ORM:** Django ORM for database management (1 pt)
+- **Major: Use a framework for both the frontend and backend.** Django & React (2 pts)
+- **Major: Implement real-time features using WebSockets or similar technology.** Real-time gaming experience (2 pts)
+- **Major: Allow users to interact with other users.** Basic chat, checking other users' profiles, adding and removing friends (2 pts)
+- **Major: A public API to interact with the database with a secured API key, rate limiting, documentation, and at least 5 endpoints** API available for interacting with user database (2 pts)
+- **Minor: Use an ORM for the database.** Django ORM for database management (1 pt)
 
 ### User Management (4 Points)
 
-- **Standard User Management:** Secure registration, login, and
-  profile management (2 pts)
-- **Remote Authentication:** OAuth integration with 42 Intra (2 pts)
-
-### Gameplay & Graphics (6 Points)
-
-- **Web-based Game:** Full 3D Battleship implementation (2 pts)
-- **Remote Players:** Real-time multiplayer via WebSockets (2 pts)
-- **Advanced 3D Graphics:** Three.js integration for immersive
-  board experience (2 pts)
+- **Major: Standard user management and authentication.** Secure registration, login, and profile management (2 pts)
+- **Minor: Game statistics and match history.** Game stats and match history (1 pt)
+- **Minor: Implement remote authentication with OAuth 2.0** OAuth integration with 42 Intra (1 pt)
 
 ### Artificial Intelligence (2 Points)
 
-- **AI Opponent:** A strategic bot utilizing a probability-grid
-  algorithm for ship hunting (2 pts)
+- **Major: Introduce an AI Opponent for games** A strategic bot utilizing a probability-grid algorithm for ship hunting (2 pts)
 
-### Accessibility (1 Point)
+### Gaming and User Experience (6 Points)
 
-- **Multiple Languages:** Support for English, Polish, and French (1 pt)
+- **Major: Implement a complete web-based game where users can play against each other** Full 3D Battleship implementation (2 pts)
+- **Major: Remote players — Enable two players on separate computers to play the same game in real-time** Real-time multiplayer via WebSockets (2 pts)
+- **Major: Implement advanced 3D graphics using a library like Three.js or Babylon.js.** Three.js integration for immersive board experience (2 pts)
 
-**Total: 16 Points** (exceeding the 14-point requirement).
+**Total: 21 Points** (exceeding the 14-point requirement).
 
 ---
 
