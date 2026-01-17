@@ -69,22 +69,51 @@ The application is built as a microservices-based Single Page Application
 
 ```mermaid
 flowchart TD
-    User([User Browser]) -->|HTTP/WS| Nginx{Nginx Proxy}
-    
-    subgraph "Internal Network"
-    Nginx -->|1. Serve App| Frontend[Frontend - React]
-    Nginx <-->|2. API & WebSockets| Backend[Backend - Django ASGI]
-    
-    Backend <-->|Channel Layer| Redis[(Redis 7)]
-    Backend -.->|External DB| PostgreSQL[(PostgreSQL Neon)]
+    subgraph ClientSide [Client Side: User Browser]
+        direction TB
+        UI[React UI]
+        Logic[App Logic / State]
+        WS_Client[WebSocket Client]
     end
 
-    %% Note: Frontend code executes in the User's Browser
-    Frontend -.->|App Code| User
-    User -.->|API Calls| Nginx
+    subgraph Gateway [Entry Point]
+        Nginx{Nginx Reverse Proxy}
+    end
+
+    subgraph AppServices [Server Side: Docker Architecture]
+        subgraph Serving [Static Delivery]
+            Frontend[Frontend Container]
+        end
+
+        subgraph LogicLayer [Application API]
+            Backend[Backend - Django ASGI]
+            Redis[(Redis 7)]
+        end
+    end
+
+    subgraph Data [Persistence]
+        PostgreSQL[(PostgreSQL Neon)]
+    end
+
+    %% Phase 1: Serving the Application
+    UI -.->|1. Request Page| Nginx
+    Nginx -.->|2. Get HTML/JS/CSS| Frontend
+    Frontend -.->|3. Assets Bundle| Nginx
+    Nginx -.->|4. Load App| UI
+
+    %% Phase 2: Runtime Communication
+    Logic <==>|5. REST API Calls| Nginx
+    WS_Client <==>|6. WebSocket Stream| Nginx
+    Nginx <==>|7. Proxy to Django| Backend
+
+    %% Internal Backend Flow
+    Backend <-->|Channel Layer / Cache| Redis
+    Backend ---|SQL Queries| PostgreSQL
 ```
 
-> **Note on Communication:** The Frontend (React) and Backend (Django) do not communicate directly between containers. Instead, the React application is downloaded by the User's Browser, which then makes requests to the Django API and WebSockets via the Nginx proxy.
+> **Architecture Note:**
+> 1. **Static Serving Phase:** The browser initially contacts Nginx to download the React application code stored in the **Frontend** container.
+> 2. **Runtime Phase:** Once loaded, the React application executes entirely in the user's browser and communicates with the **Backend** via Nginx using REST APIs and WebSockets.
 
 ### Documentation
 
