@@ -69,17 +69,22 @@ The application is built as a microservices-based Single Page Application
 
 ```mermaid
 flowchart TD
-    User([User Browser]) -->|Port 80| Nginx{Nginx Proxy}
+    User([User Browser]) -->|HTTP/WS| Nginx{Nginx Proxy}
     
     subgraph "Internal Network"
-    Nginx -->|/| Frontend[React Dev Server]
-    Nginx -->|/api| Backend[Django ASGI]
-    Nginx -->|/ws| Backend[WebSockets/Daphne]
+    Nginx -->|1. Serve App| Frontend[Frontend - React]
+    Nginx <-->|2. API & WebSockets| Backend[Backend - Django ASGI]
     
-    Backend <-->|Cache & Channels| Redis[(Redis 7)]
-    Backend -.->|External| PostgreSQL[(PostgreSQL Neon)]
+    Backend <-->|Channel Layer| Redis[(Redis 7)]
+    Backend -.->|External DB| PostgreSQL[(PostgreSQL Neon)]
     end
+
+    %% Note: Frontend code executes in the User's Browser
+    Frontend -.->|App Code| User
+    User -.->|API Calls| Nginx
 ```
+
+> **Note on Communication:** The Frontend (React) and Backend (Django) do not communicate directly between containers. Instead, the React application is downloaded by the User's Browser, which then makes requests to the Django API and WebSockets via the Nginx proxy.
 
 ### Documentation
 
