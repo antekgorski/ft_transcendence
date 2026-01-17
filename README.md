@@ -1,5 +1,4 @@
-This project has been created as part of the 42 curriculum by dmodrzej, agorski, mbany, ltomasze and gbuczyns.
-
+This project has been created as part of the 42 curriculum by dmodrzej[, agorski[, mbany[, ltomasze[, and gbuczyns]]]].
 
 ---
 
