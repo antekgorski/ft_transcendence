@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import API_BASE_URL from '../config';
-import '../styles/WelcomePage.css';
 
 function WelcomePage({ onLogin }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -20,7 +19,6 @@ function WelcomePage({ onLogin }) {
       ...prev,
       [name]: value
     }));
-    // Clear errors when user types
     setError('');
     setSuccess('');
   };
@@ -31,7 +29,6 @@ function WelcomePage({ onLogin }) {
     setSuccess('');
 
     if (!isLogin) {
-      // Registration validation
       if (formData.password !== formData.passwordConfirm) {
         setError('Passwords do not match');
         return;
@@ -76,7 +73,6 @@ function WelcomePage({ onLogin }) {
         setLoading(false);
       }
     } else {
-      // Login logic (to be implemented later)
       console.log('Login submitted:', formData);
       if (onLogin) {
         onLogin();
@@ -97,126 +93,125 @@ function WelcomePage({ onLogin }) {
   };
 
   return (
-    <div className="welcome-container">
-      <div className="welcome-content">
-        <div className="game-header">
-          <h1 className="game-title">⚓ BATTLESHIP</h1>
-          <p className="game-subtitle">3D Tactical Multiplayer Game</p>
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 p-5">
+      <div className="flex flex-col items-center gap-10 max-w-md w-full">
+        {/* Header */}
+        <div className="text-center">
+          <h1 className="text-5xl font-bold text-white tracking-wide drop-shadow-lg">
+            ⚓ BATTLESHIP
+          </h1>
+          <p className="text-lg text-emerald-400 mt-2 tracking-wide">
+            3D Tactical Multiplayer Game
+          </p>
         </div>
 
-        <div className="auth-form-container">
-          {error && <div className="error-message">{error}</div>}
-          {success && <div className="success-message">{success}</div>}
-          
-          {isLogin ? (
-            <form onSubmit={handleSubmit} className="auth-form">
-              <h2>Login</h2>
-              
-              <div className="form-group">
-                <input
-                  type="text"
-                  name="username"
-                  placeholder="Username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <div className="form-group">
-                <input
-                  type="password"
-                  name="password"
-                  placeholder="Password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <button type="submit" className="submit-btn" disabled={loading}>
-                {loading ? 'LOGGING IN...' : 'LOGIN'}
-              </button>
-
-              <p className="toggle-text">
-                Don't have an account?{' '}
-                <button type="button" onClick={toggleForm} className="toggle-btn" disabled={loading}>
-                  Sign Up
-                </button>
-              </p>
-            </form>
-          ) : (
-            <form onSubmit={handleSubmit} className="auth-form">
-              <h2>Register</h2>
-
-              <div className="form-group">
-                <input
-                  type="text"
-                  name="username"
-                  placeholder="Username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <div className="form-group">
-                <input
-                  type="email"
-                  name="email"
-                  placeholder="Email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <div className="form-group">
-                <input
-                  type="password"
-                  name="password"
-                  placeholder="Password (min 8 characters)"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                  minLength={8}
-                />
-              </div>
-
-              <div className="form-group">
-                <input
-                  type="password"
-                  name="passwordConfirm"
-                  placeholder="Confirm Password"
-                  value={formData.passwordConfirm}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <button type="submit" className="submit-btn" disabled={loading}>
-                {loading ? 'REGISTERING...' : 'REGISTER'}
-              </button>
-
-              <p className="toggle-text">
-                Already have an account?{' '}
-                <button type="button" onClick={toggleForm} className="toggle-btn" disabled={loading}>
-                  Login
-                </button>
-              </p>
-            </form>
+        {/* Auth Form */}
+        <div className="w-full bg-white/95 rounded-xl shadow-2xl p-10 backdrop-blur-sm">
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-center">
+              {error}
+            </div>
           )}
+          {success && (
+            <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-md text-center">
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <h2 className="text-2xl font-bold text-center text-slate-800 mb-2">
+              {isLogin ? 'Login' : 'Register'}
+            </h2>
+
+            <input
+              type="text"
+              name="username"
+              placeholder="Username"
+              value={formData.username}
+              onChange={handleInputChange}
+              required
+              disabled={loading}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
+                         focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
+                         disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
+            />
+
+            {!isLogin && (
+              <input
+                type="email"
+                name="email"
+                placeholder="Email"
+                value={formData.email}
+                onChange={handleInputChange}
+                required
+                disabled={loading}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
+                           focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
+                           disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
+              />
+            )}
+
+            <input
+              type="password"
+              name="password"
+              placeholder={isLogin ? "Password" : "Password (min 8 characters)"}
+              value={formData.password}
+              onChange={handleInputChange}
+              required
+              disabled={loading}
+              minLength={isLogin ? undefined : 8}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
+                         focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
+                         disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
+            />
+
+            {!isLogin && (
+              <input
+                type="password"
+                name="passwordConfirm"
+                placeholder="Confirm Password"
+                value={formData.passwordConfirm}
+                onChange={handleInputChange}
+                required
+                disabled={loading}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
+                           focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
+                           disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
+              />
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 mt-2 bg-gradient-to-r from-emerald-500 to-emerald-600 
+                         text-white font-bold uppercase tracking-wider rounded-md
+                         hover:from-emerald-600 hover:to-emerald-700 hover:shadow-lg
+                         disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {loading 
+                ? (isLogin ? 'LOGGING IN...' : 'REGISTERING...') 
+                : (isLogin ? 'LOGIN' : 'REGISTER')}
+            </button>
+
+            <p className="text-center text-gray-600 mt-2">
+              {isLogin ? "Don't have an account? " : "Already have an account? "}
+              <button
+                type="button"
+                onClick={toggleForm}
+                disabled={loading}
+                className="text-emerald-600 font-semibold hover:text-emerald-700 
+                           disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLogin ? 'Sign Up' : 'Login'}
+              </button>
+            </p>
+          </form>
         </div>
 
-        <div className="footer-text">
-          <p>ft_transcendence - 42 School Project</p>
-        </div>
+        {/* Footer */}
+        <p className="text-gray-400 text-sm">
+          ft_transcendence - 42 School Project
+        </p>
       </div>
     </div>
   );

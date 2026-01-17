@@ -14,18 +14,11 @@ This project has been created as part of the 42 curriculum by dmodrzej[, agorski
 - [Features List](#features-list)
 - [Modules](#modules)
 - [Individual Contributions](#individual-contributions)
-- [GitHub Rules](docs/git_rules.md)
+- [GitHub Rules](GitRules.md)
 
 ---
 
 # Description
-
-<!--
-Section that clearly presents the project, including its goal and a
-brief overview.
-The "Description" section should also contain a clear name for the
-project and its key features.
--->
 
 **3D Tactical Battleship** is the final project of the 42 Common Core.
 Our team has developed a high-end, web-based **3D Battleship** platform.
@@ -38,38 +31,67 @@ The application is built as a microservices-based Single Page Application
 
 # Instructions
 
-<!--
-Section containing any relevant information about compilation,
-installation, and/or execution.
-The "Instructions" section should mention all the needed prerequisites
-(software, tools, versions, configuration like .env setup, etc.),
-and step-by-step instructions to run the project.
--->
+### Prerequisites
+
+- Docker & Docker Compose
+- Git
+
+### Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/antekgorski/ft_transendence.git
+   cd ft_transendence
+   ```
+
+2. Create environment file:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your database credentials
+   ```
+
+3. Start the application:
+   ```bash
+   # First run (builds containers)
+   docker-compose up --build
+
+   # Subsequent runs (skip build if no Dockerfile changes)
+   docker-compose up
+   ```
+
+4. Access the app at `http://localhost`
 
 ---
 
 # Resources
 
-<!--
-Section listing classic references related to the topic (documentation,
-articles, tutorials, etc.), as well as a description of how AI was used
-- specifying for which tasks and which parts of the project.
+### Infrastructure
 
-Additional sections may be required depending on the project (e.g.,
-usage examples, feature list, technical choices, etc.).
-Any required additions will be explicitly listed below.
--->
+```mermaid
+flowchart TD
+    User([User Browser]) -->|Port 80| Nginx{Nginx Proxy}
+    
+    subgraph "Internal Network"
+    Nginx -->|/| Frontend[React Dev Server]
+    Nginx -->|/api| Backend[Django ASGI]
+    Nginx -->|/ws| Backend[WebSockets/Daphne]
+    
+    Backend <-->|Cache & Channels| Redis[(Redis 7)]
+    Backend -.->|External| PostgreSQL[(PostgreSQL Neon)]
+    end
+```
+
+### Documentation
+
+- [Docker Documentation](https://docs.docker.com/)
+- [Docker Compose](https://docs.docker.com/compose/)
+- [Redis Documentation](https://redis.io/docs/) - In-memory data store for WebSockets and caching.
+- [Django Channels](https://channels.readthedocs.io/en/stable/) - Handlers for WebSockets and real-time features.
+- [Mermaid Diagrams](https://mermaid.js.org/intro/)
 
 ---
 
 # Team Information
-
-<!--
-For each team member mentioned at the top of the README.md, you must
-provide:
-- Assigned role(s): PO, PM, Tech Lead, Developers, etc.
-- Brief description of their responsibilities.
--->
 
 | Login        | Role                   | Responsibilities                              |
 |:-------------|:-----------------------|:----------------------------------------------|
@@ -121,8 +143,8 @@ provide:
 - **Django Simple JWT**: Token-based authentication and session management
 
 ### Database & Cache
-- **PostgreSQL 15**: Robust relational database chosen for ACID compliance, complex queries, and excellent Django ORM integration
-- **Redis 7**: In-memory data store for WebSocket channel layers and session caching
+- **PostgreSQL 15**: Robust relational database (hosted via Neon) chosen for ACID compliance, complex queries, and excellent Django ORM integration.
+- **Redis 7**: In-memory data store for WebSocket channel layers and session caching. Configured with custom memory limits (256MB) and LRU eviction policy in [redis/redis.conf](redis/redis.conf).
 
 ### Infrastructure
 - **Docker & Docker Compose**: Containerization for consistent development and deployment environments
@@ -246,15 +268,6 @@ erDiagram
 
 # Modules
 
-<!--
-- List of all chosen modules (Major and Minor).
-- Point calculation (Major = 2pts, Minor = 1pt).
-- Justification for each module choice, especially for custom
-  "Modules of choice".
-- How each module was implemented.
-- Which team member(s) worked on each module.
--->
-
 ### Web (9 Points)
 
 - **Major: Use a framework for both the frontend and backend.** Django & React (2 pts)
@@ -285,11 +298,10 @@ erDiagram
 
 # Individual Contributions
 
-<!--
-- Detailed breakdown of what each team member contributed.
-- Specific features, modules, or components implemented by each person.
-- Any challenges faced and how they were overcome.
-
-Any other useful or relevant information is welcome (usage documentation,
-known limitations, license, credits, etc.).
--->
+| Member     | Focus Area                                      |
+|------------|------------------------------------------------|
+| **agorski**  | GitHub Issues, project setup, backend development |
+| **dmodrzej** | Docker, infrastructure, backend support         |
+| **ltomasze** | Backend development (Django)                    |
+| **mbany**    | Frontend development (React)                    |
+| **gbuczyns** | Frontend development (React)                    |
