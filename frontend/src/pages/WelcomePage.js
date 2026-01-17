@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import API_BASE_URL from '../config';
 import '../styles/WelcomePage.css';
 
 function WelcomePage({ onLogin }) {
@@ -9,6 +10,9 @@ function WelcomePage({ onLogin }) {
     password: '',
     passwordConfirm: ''
   });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState('');
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -16,14 +20,67 @@ function WelcomePage({ onLogin }) {
       ...prev,
       [name]: value
     }));
+    // Clear errors when user types
+    setError('');
+    setSuccess('');
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submitted:', formData);
-    // Po zalogowaniu/rejestracji
-    if (onLogin) {
-      onLogin();
+    setError('');
+    setSuccess('');
+
+    if (!isLogin) {
+      // Registration validation
+      if (formData.password !== formData.passwordConfirm) {
+        setError('Passwords do not match');
+        return;
+      }
+      if (formData.password.length < 8) {
+        setError('Password must be at least 8 characters long');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/register/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: formData.username,
+            email: formData.email,
+            password: formData.password,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          setSuccess('Registration successful! You can now login.');
+          setIsLogin(true);
+          setFormData({
+            username: '',
+            email: '',
+            password: '',
+            passwordConfirm: ''
+          });
+        } else {
+          setError(data.error || 'Registration failed');
+        }
+      } catch (err) {
+        setError('Network error. Please try again.');
+        console.error('Registration error:', err);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Login logic (to be implemented later)
+      console.log('Login submitted:', formData);
+      if (onLogin) {
+        onLogin();
+      }
     }
   };
 
@@ -35,6 +92,8 @@ function WelcomePage({ onLogin }) {
       password: '',
       passwordConfirm: ''
     });
+    setError('');
+    setSuccess('');
   };
 
   return (
@@ -46,6 +105,9 @@ function WelcomePage({ onLogin }) {
         </div>
 
         <div className="auth-form-container">
+          {error && <div className="error-message">{error}</div>}
+          {success && <div className="success-message">{success}</div>}
+          
           {isLogin ? (
             <form onSubmit={handleSubmit} className="auth-form">
               <h2>Login</h2>
@@ -58,6 +120,7 @@ function WelcomePage({ onLogin }) {
                   value={formData.username}
                   onChange={handleInputChange}
                   required
+                  disabled={loading}
                 />
               </div>
 
@@ -69,16 +132,17 @@ function WelcomePage({ onLogin }) {
                   value={formData.password}
                   onChange={handleInputChange}
                   required
+                  disabled={loading}
                 />
               </div>
 
-              <button type="submit" className="submit-btn">
-                LOGIN
+              <button type="submit" className="submit-btn" disabled={loading}>
+                {loading ? 'LOGGING IN...' : 'LOGIN'}
               </button>
 
               <p className="toggle-text">
                 Don't have an account?{' '}
-                <button type="button" onClick={toggleForm} className="toggle-btn">
+                <button type="button" onClick={toggleForm} className="toggle-btn" disabled={loading}>
                   Sign Up
                 </button>
               </p>
@@ -95,6 +159,7 @@ function WelcomePage({ onLogin }) {
                   value={formData.username}
                   onChange={handleInputChange}
                   required
+                  disabled={loading}
                 />
               </div>
 
@@ -106,6 +171,7 @@ function WelcomePage({ onLogin }) {
                   value={formData.email}
                   onChange={handleInputChange}
                   required
+                  disabled={loading}
                 />
               </div>
 
@@ -113,10 +179,12 @@ function WelcomePage({ onLogin }) {
                 <input
                   type="password"
                   name="password"
-                  placeholder="Password"
+                  placeholder="Password (min 8 characters)"
                   value={formData.password}
                   onChange={handleInputChange}
                   required
+                  disabled={loading}
+                  minLength={8}
                 />
               </div>
 
@@ -128,16 +196,17 @@ function WelcomePage({ onLogin }) {
                   value={formData.passwordConfirm}
                   onChange={handleInputChange}
                   required
+                  disabled={loading}
                 />
               </div>
 
-              <button type="submit" className="submit-btn">
-                REGISTER
+              <button type="submit" className="submit-btn" disabled={loading}>
+                {loading ? 'REGISTERING...' : 'REGISTER'}
               </button>
 
               <p className="toggle-text">
                 Already have an account?{' '}
-                <button type="button" onClick={toggleForm} className="toggle-btn">
+                <button type="button" onClick={toggleForm} className="toggle-btn" disabled={loading}>
                   Login
                 </button>
               </p>

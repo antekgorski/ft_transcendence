@@ -14,8 +14,11 @@ ALLOWED_HOSTS = os.environ['ALLOWED_HOSTS'].split(',')
 
 # Minimal apps for API-only project
 INSTALLED_APPS = [
+    'django.contrib.contenttypes',
+    'django.contrib.auth',
     'rest_framework',
     'corsheaders',
+    'authentication',
 ]
 
 # Minimal middleware for API-only project
@@ -28,7 +31,7 @@ ROOT_URLCONF = 'sql_executor.urls'
 
 WSGI_APPLICATION = 'sql_executor.wsgi.application'
 
- Database - Neon PostgreSQL (all required from .env)
+# Database - Neon PostgreSQL (all required from .env)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
