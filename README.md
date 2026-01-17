@@ -68,7 +68,7 @@ The application is built as a microservices-based Single Page Application
 ### Infrastructure
 
 ```mermaid
-flowchart TD
+flowchart LR
     subgraph Client [Client Side: User Browser]
         direction TB
         UI[<b>React UI</b><br/>Styled with Tailwind CSS]
@@ -76,32 +76,32 @@ flowchart TD
         WS_Client[<b>WebSocket Client</b><br/>Real-time communication]
     end
 
-    subgraph Gateway [Entry Point]
+    subgraph ServiceMesh [Internal Network]
+        direction TB
         Nginx{Nginx Proxy}
+        FE_Srv[<b>Frontend Service</b><br/>Serves Static Assets]
     end
 
-    subgraph DockerServices [Server Side: Docker Containers]
-        FE[<b>Frontend Service</b><br/>Serves Static Assets]
+    subgraph BackendCluster [Backend & Logic]
+        direction TB
         BE[<b>Backend Service</b><br/>Django ASGI / Daphne]
         RD[(<b>Redis 7</b><br/>Channel Layer / Cache)]
     end
 
-    subgraph External [Persistence]
+    subgraph Persistence [Data Layer]
         DB[(PostgreSQL Neon)]
     end
 
-    %% Step 1: Delivery of the frontend application
-    UI -.->|1. Fetch App| Nginx
-    Nginx -.->|2. Request Bundle| FE
-    FE -.->|3. JS/CSS Bundle| Nginx
-    Nginx -.->|4. Load App| UI
+    %% Flow: Loading the App (Left to Center)
+    UI <==>|1. Fetch Assets| Nginx
+    Nginx <==>|2. Static Files| FE_Srv
 
-    %% Step 2: Runtime API communication
-    Logic <==>|5. REST API Calls| Nginx
-    WS_Client <==>|6. WebSocket Traffic| Nginx
-    Nginx <==>|7. Proxy to Django| BE
+    %% Flow: Runtime Communication (Left to Right)
+    Logic <==>|3. REST API| Nginx
+    WS_Client <==>|4. WebSockets| Nginx
+    Nginx <==>|5. Proxy| BE
 
-    %% Step 3: Server-side data management
+    %% Internal Backend Flow
     BE <-->|Pub/Sub| RD
     BE <-->|SQL| DB
 
@@ -112,10 +112,14 @@ flowchart TD
     classDef storage fill:#dfd,stroke:#333,stroke-width:2px;
     
     class UI,Logic,WS_Client browser;
-    class FE,BE,RD container;
+    class FE_Srv,BE,RD container;
     class Nginx proxy;
     class DB storage;
 ```
+
+> **Architecture Note:**
+> 1. **Static Serving Phase:** The browser initially contacts Nginx to download the application (React + Tailwind CSS bundle) stored in the **Frontend** container.
+> 2. **Runtime Phase:** Once the application is loaded in the browser, it executes locally. It communicates with the **Backend** via Nginx for dynamic data (REST API) and real-time multiplayer features (WebSockets).
 
 > **Architecture Note:**
 > 1. **Static Serving Phase:** The browser initially contacts Nginx to download the application (React + Tailwind CSS bundle) stored in the **Frontend** container.
