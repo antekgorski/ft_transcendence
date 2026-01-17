@@ -28,31 +28,31 @@ ROOT_URLCONF = 'sql_executor.urls'
 
 WSGI_APPLICATION = 'sql_executor.wsgi.application'
 
-# Database - Neon PostgreSQL (all required from .env)
-#DATABASES = {
-#    'default': {
-#        'ENGINE': 'django.db.backends.postgresql',
-#        'NAME': os.environ['DB_NAME'],
-#        'USER': os.environ['DB_USER'],
-#        'PASSWORD': os.environ['DB_PASSWORD'],
-#        'HOST': os.environ['DB_HOST'],
-#        'PORT': os.environ['DB_PORT'],
-#        'OPTIONS': {
-#            'sslmode': os.environ['DB_SSLMODE'],
-#        },
-#    }
-#}
+ Database - Neon PostgreSQL (all required from .env)
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ['DB_NAME'],
+        'USER': os.environ['DB_USER'],
+        'PASSWORD': os.environ['DB_PASSWORD'],
+        'HOST': os.environ['DB_HOST'],
+        'PORT': os.environ['DB_PORT'],
+        'OPTIONS': {
+            'sslmode': os.environ['DB_SSLMODE'],
+        },
+    }
+}
 
 # Database - simple SQLite for local development
 # Baza danych - proste SQLite do lokalnego developmentu
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        # db.sqlite3 will be created one level above this file
-        # plik db.sqlite3 zostanie utworzony poziom wyżej niż ten plik
-        'NAME': os.path.join(os.path.dirname(BASE_DIR), 'db.sqlite3'),
-    }
-}
+#DATABASES = {
+#    'default': {
+#        'ENGINE': 'django.db.backends.sqlite3',
+#        # db.sqlite3 will be created one level above this file
+#        # plik db.sqlite3 zostanie utworzony poziom wyżej niż ten plik
+#        'NAME': os.path.join(os.path.dirname(BASE_DIR), 'db.sqlite3'),
+#    }
+#}
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
