@@ -14,8 +14,11 @@ ALLOWED_HOSTS = os.environ['ALLOWED_HOSTS'].split(',')
 
 # Minimal apps for API-only project
 INSTALLED_APPS = [
+    'django.contrib.contenttypes',
+    'django.contrib.auth',
     'rest_framework',
     'corsheaders',
+    'authentication',
 ]
 
 # Minimal middleware for API-only project
@@ -42,6 +45,17 @@ DATABASES = {
         },
     }
 }
+
+# Database - simple SQLite for local development
+# Baza danych - proste SQLite do lokalnego developmentu
+#DATABASES = {
+#    'default': {
+#        'ENGINE': 'django.db.backends.sqlite3',
+#        # db.sqlite3 will be created one level above this file
+#        # plik db.sqlite3 zostanie utworzony poziom wyżej niż ten plik
+#        'NAME': os.path.join(os.path.dirname(BASE_DIR), 'db.sqlite3'),
+#    }
+#}
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
