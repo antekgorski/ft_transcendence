@@ -71,39 +71,38 @@ The application is built as a microservices-based Single Page Application
 flowchart LR
     subgraph Client [Client Side: User Browser]
         direction TB
-        UI[<b>React UI</b><br/>Styled with Tailwind CSS]
-        Logic[<b>App Runtime</b><br/>State & Business Logic]
-        WS_Client[<b>WebSocket Client</b><br/>Real-time communication]
+        UI[<b>React UI</b>]
+        Logic[<b>App Runtime</b>]
+        WS_C[<b>WS Client</b>]
     end
 
-    subgraph ServiceMesh [Internal Network]
-        direction TB
+    subgraph Entry [Entry Point]
         Nginx{Nginx Proxy}
-        FE_Srv[<b>Frontend Service</b><br/>Serves Static Assets]
     end
 
-    subgraph BackendCluster [Backend & Logic]
+    subgraph Internal [Isolated Docker Network]
         direction TB
-        BE[<b>Backend Service</b><br/>Django ASGI / Daphne]
-        RD[(<b>Redis 7</b><br/>Channel Layer / Cache)]
+        FE[<b>Frontend Service</b><br/>Static Assets]
+        BE[<b>Backend Service</b><br/>Django ASGI]
+        RD[(<b>Redis 7</b><br/>Channel Layer)]
     end
 
     subgraph Persistence [Data Layer]
         DB[(PostgreSQL Neon)]
     end
 
-    %% Flow: Loading the App (Left to Center)
-    UI <==>|1. Fetch Assets| Nginx
-    Nginx <==>|2. Static Files| FE_Srv
+    %% Phase 1: Application Loading
+    UI <==>|1. Fetch Bundle| Nginx
+    Nginx <==>|2. Request Assets| FE
 
-    %% Flow: Runtime Communication (Left to Right)
+    %% Phase 2: Runtime API/WS
     Logic <==>|3. REST API| Nginx
-    WS_Client <==>|4. WebSockets| Nginx
+    WS_C <==>|4. WebSockets| Nginx
     Nginx <==>|5. Proxy| BE
 
-    %% Internal Backend Flow
-    BE <-->|Pub/Sub| RD
-    BE <-->|SQL| DB
+    %% Internal Communication
+    BE <-->|6. Cache / Pub-Sub| RD
+    BE <-->|7. Persistence| DB
 
     %% Styling
     classDef browser fill:#f9f,stroke:#333,stroke-width:2px;
@@ -111,15 +110,11 @@ flowchart LR
     classDef proxy fill:#fff,stroke:#333,stroke-dasharray: 5 5;
     classDef storage fill:#dfd,stroke:#333,stroke-width:2px;
     
-    class UI,Logic,WS_Client browser;
-    class FE_Srv,BE,RD container;
+    class UI,Logic,WS_C browser;
+    class FE,BE,RD container;
     class Nginx proxy;
     class DB storage;
 ```
-
-> **Architecture Note:**
-> 1. **Static Serving Phase:** The browser initially contacts Nginx to download the application (React + Tailwind CSS bundle) stored in the **Frontend** container.
-> 2. **Runtime Phase:** Once the application is loaded in the browser, it executes locally. It communicates with the **Backend** via Nginx for dynamic data (REST API) and real-time multiplayer features (WebSockets).
 
 > **Architecture Note:**
 > 1. **Static Serving Phase:** The browser initially contacts Nginx to download the application (React + Tailwind CSS bundle) stored in the **Frontend** container.
