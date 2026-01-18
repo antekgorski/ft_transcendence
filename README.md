@@ -71,8 +71,8 @@ The application is built as a microservices-based Single Page Application
 flowchart LR
     subgraph Client [Client Side: User Browser]
         direction TB
-        UI[<b>User Interface/b>]
-        Logic[<b>App Runtime</b>]
+        UI[<b>User Interface</b>]
+        Logic[<b>App Logic</b>]
         WS_C[<b>Real-Time Comms</b>]
     end
 
@@ -89,13 +89,13 @@ flowchart LR
     end
 
     %% Phase 1: Application Loading
-    UI <==>|1. Fetch React App| Nginx
-    Nginx <==>|2. Request Assets| FE
+    UI <==>|1. Request Assets| Nginx
+    Nginx <==>|2. Fetch Assets| FE
 
     %% Phase 2: Runtime API/WS
     Logic <==>|3. REST API| Nginx
     WS_C <==>|4. WebSockets| Nginx
-    Nginx <==>|5. Proxy| BE
+    Nginx <==>|5. Interpret Requests| BE
 
     %% Internal Communication
     BE <-->|6. Cache / Pub-Sub| RD
