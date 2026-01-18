@@ -73,7 +73,7 @@ flowchart LR
         direction TB
         UI[<b>User Interface</b>]
         Logic[<b>App Logic</b>]
-        WS_C[<b>Real-Time Comms</b>]
+        WS_C[<b>Real-Time Features</b>]
     end
 
     subgraph Internal [Isolated Docker Network]
@@ -121,8 +121,8 @@ flowchart LR
 
 - [Docker Documentation](https://docs.docker.com/)
 - [Docker Compose](https://docs.docker.com/compose/)
-- [Redis Documentation](https://redis.io/docs/) - In-memory data store for WebSockets and caching.
-- [Django Channels](https://channels.readthedocs.io/en/stable/) - Handlers for WebSockets and real-time features.
+- [Redis Documentation](https://redis.io/docs/)
+- [Django Channels](https://channels.readthedocs.io/en/stable/)
 - [Mermaid Diagrams](https://mermaid.js.org/intro/)
 
 ---
