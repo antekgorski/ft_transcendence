@@ -71,28 +71,29 @@ The application is built as a microservices-based Single Page Application
 flowchart LR
     subgraph Client [Client Side: User Browser]
         direction TB
-        UI[<b>React UI</b>]
+        UI[<b>User Interface/b>]
         Logic[<b>App Runtime</b>]
-        WS_C[<b>WS Client</b>]
+        WS_C[<b>Real-Time Comms</b>]
     end
 
-    subgraph Entry [Entry Point]
+    <!-- subgraph Entry [Entry Point]
         Nginx{Nginx Proxy}
-    end
+    end -->
 
     subgraph Internal [Isolated Docker Network]
         direction TB
-        FE[<b>Frontend Service</b><br/>Static Assets]
-        BE[<b>Backend Service</b><br/>Django ASGI]
-        RD[(<b>Redis 7</b><br/>Channel Layer)]
+        Nginx{Nginx Proxy}
+        FE[<b>Frontend Service</b><br/>React and Tailwind CSS]
+        BE[<b>Backend Service</b><br/>Django]
+        RD[(<b>In-memory Database</b><br/>Redis)]
     end
 
-    subgraph Persistence [Data Layer]
+    subgraph Persistence [Persistent Database]
         DB[(PostgreSQL Neon)]
     end
 
     %% Phase 1: Application Loading
-    UI <==>|1. Fetch Bundle| Nginx
+    UI <==>|1. Fetch React App| Nginx
     Nginx <==>|2. Request Assets| FE
 
     %% Phase 2: Runtime API/WS
@@ -102,7 +103,7 @@ flowchart LR
 
     %% Internal Communication
     BE <-->|6. Cache / Pub-Sub| RD
-    BE <-->|7. Persistence| DB
+    BE <-->|7. SQL Queries| DB
 
     %% Styling
     classDef browser fill:#f9f,stroke:#333,stroke-width:2px;
