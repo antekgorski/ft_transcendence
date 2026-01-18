@@ -76,10 +76,6 @@ flowchart LR
         WS_C[<b>Real-Time Comms</b>]
     end
 
-    <!-- subgraph Entry [Entry Point]
-        Nginx{Nginx Proxy}
-    end -->
-
     subgraph Internal [Isolated Docker Network]
         direction TB
         Nginx{Nginx Proxy}
