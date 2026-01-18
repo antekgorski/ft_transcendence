@@ -89,6 +89,11 @@ git branch
 git branch -r
 ```
 
+**Update list of remote branches:**
+```bash
+git fetch
+```
+
 **Show local and remote-tracking branches:**
 ```bash
 git branch -a
