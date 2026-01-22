@@ -6,7 +6,6 @@ from django.contrib.auth.hashers import make_password, check_password
 class User(models.Model):
     """
     User model based on DatabaseDesign.md specification.
-    Model użytkownika zgodny ze specyfikacją z DatabaseDesign.md.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=150, unique=True)
@@ -26,11 +25,11 @@ class User(models.Model):
         db_table = 'users'
 
     def set_password(self, raw_password):
-        """Hash and set the password / Hashuje i ustawia hasło"""
+        """Hash and set the password"""
         self.password_hash = make_password(raw_password)
 
     def check_password(self, raw_password):
-        """Check if password matches / Sprawdza czy hasło pasuje"""
+        """Check if password matches the stored hash"""
         return check_password(raw_password, self.password_hash)
 
     def __str__(self):

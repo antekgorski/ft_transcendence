@@ -1,6 +1,7 @@
 #from django.shortcuts import render
 
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import IntegrityError
@@ -8,19 +9,17 @@ from .models import User
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def register(request):
     """
     Registration endpoint - creates a new user in the database.
-    Endpoint rejestracji - tworzy nowego użytkownika w bazie danych.
     """
     # Extract data from JSON body
-    # Pobierz dane z ciała żądania (JSON)
     username = request.data.get('username')
     email = request.data.get('email')
     password = request.data.get('password')
 
     # Basic presence check
-    # Podstawowe sprawdzenie, czy pola są podane
     if not username or not email or not password:
         return Response(
             {
@@ -31,7 +30,6 @@ def register(request):
         )
 
     # Password length validation
-    # Walidacja długości hasła
     if len(password) < 8:
         return Response(
             {
@@ -43,7 +41,6 @@ def register(request):
 
     try:
         # Create new user
-        # Utwórz nowego użytkownika
         user = User(
             username=username,
             email=email,

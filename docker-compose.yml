@@ -1,6 +1,30 @@
 version: '3.8'
 
 services:
+  # Nginx (Reverse Proxy)
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: ft_transcendence_nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+      - redis
+    networks:
+      - transcendence_network
+
+  # Redis (In-memory data store)
+  redis:
+    build:
+      context: ./redis
+      dockerfile: Dockerfile
+    container_name: ft_transcendence_redis
+    networks:
+      - transcendence_network
+
   # Backend (Django)
   backend:
     build:
@@ -19,15 +43,18 @@ services:
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT}
       DB_SSLMODE: ${DB_SSLMODE}
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ./backend:/app
     ports:
       - "8000:8000"
+    depends_on:
+      - redis
     networks:
       - transcendence_network
     command: python manage.py runserver 0.0.0.0:8000
 
-  # Frontend (React)
+  # Frontend (React Dev Server with Hot Reload)
   frontend:
     build:
       context: ./frontend
@@ -35,14 +62,19 @@ services:
     container_name: ft_transcendence_frontend
     env_file:
       - .env
+    environment:
+      - REACT_APP_API_URL=/api
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
     ports:
-      - "3000:80"
+      - "3000:3000"
     depends_on:
       - backend
     networks:
       - transcendence_network
-    environment:
-      - REACT_APP_API_URL=${REACT_APP_API_URL}
 
 networks:
   transcendence_network:

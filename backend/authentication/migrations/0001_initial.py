@@ -1,5 +1,4 @@
 # Generated migration for User model
-# Migracja wygenerowana dla modelu User
 
 from django.db import migrations, models
 import uuid
@@ -8,7 +7,6 @@ import uuid
 class Migration(migrations.Migration):
     """
     Initial migration for User model based on DatabaseDesign.md.
-    Początkowa migracja dla modelu User zgodna z DatabaseDesign.md.
     """
 
     initial = True
