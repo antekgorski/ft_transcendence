@@ -5,6 +5,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import IntegrityError
+from django.db.models import Q
+from django.utils import timezone
 from .models import User
 
 
@@ -100,3 +102,77 @@ def register(request):
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login(request):
+    """Simple login endpoint that verifies credentials and returns user data.
+
+    Accepts either username or email as identifier. No JWT/session handling yet –
+    this will be added later according to project design.
+    """
+    identifier = (
+        request.data.get('identifier')
+        or request.data.get('username')
+        or request.data.get('email')
+    )
+    password = request.data.get('password')
+
+    if not identifier or not password:
+        return Response(
+            {
+                "error": "identifier and password are required.",
+                "error_pl": "identifier i hasło są wymagane.",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        user = User.objects.get(
+            Q(username__iexact=identifier) | Q(email__iexact=identifier)
+        )
+    except User.DoesNotExist:
+        return Response(
+            {
+                "error": "Invalid credentials.",
+                "error_pl": "Nieprawidłowe dane logowania.",
+            },
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    if not user.is_active:
+        return Response(
+            {
+                "error": "Account is disabled.",
+                "error_pl": "Konto jest zablokowane.",
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not user.check_password(password):
+        return Response(
+            {
+                "error": "Invalid credentials.",
+                "error_pl": "Nieprawidłowe dane logowania.",
+            },
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    user.last_login = timezone.now()
+    user.save(update_fields=["last_login"])
+
+    return Response(
+        {
+            "message": "Login successful.",
+            "message_pl": "Logowanie powiodło się.",
+            "user": {
+                "id": str(user.id),
+                "username": user.username,
+                "email": user.email,
+                "display_name": user.display_name,
+                "avatar_url": user.avatar_url,
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
