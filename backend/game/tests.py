@@ -1351,7 +1351,7 @@ class GameConsumerTests(TestCase):
     async def async_test_connect(self):
         """Test WebSocket connection."""
         # Create users
-        player1 = await self._async_create_user('player1', 'player1@test.com', 'pass123')
+        await self._async_create_user('player1', 'player1@test.com', 'pass123')
         
         # Create communicator
         communicator = WebsocketCommunicator(
