@@ -2,7 +2,6 @@ from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
-import json
 
 User = get_user_model()
 
