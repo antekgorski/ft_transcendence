@@ -806,7 +806,7 @@ class GameActiveGameTests(TestCase):
         mock_redis_class.return_value = mock_manager
         
         # Create an active game
-        game = Game.objects.create(
+        Game.objects.create(
             player_1=self.player1,
             player_2=self.player2,
             game_type='pvp',
