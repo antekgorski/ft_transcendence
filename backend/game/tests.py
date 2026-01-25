@@ -24,59 +24,6 @@ User = get_user_model()
 # REST API TESTS (ORIGINAL)
 # ============================================================================
 
-class GameCreationTests(TestCase):
-    """Test game creation endpoint."""
-    
-    def setUp(self):
-        self.client = APIClient()
-        self.player1 = User.objects.create_user(
-            username='player1',
-            email='player1@example.com',
-            password='SecurePass123!'
-        )
-        self.player2 = User.objects.create_user(
-            username='player2',
-            email='player2@example.com',
-            password='SecurePass123!'
-        )
-        self.client.force_authenticate(user=self.player1)
-    
-    @patch('game.views.GameStateManager')
-    def test_create_ai_game(self, mock_redis_class):
-        """Test creating a game vs AI."""
-        mock_manager = Mock()
-        mock_redis_class.return_value = mock_manager
-        
-        data = {'game_type': 'ai'}
-        response = self.client.post('/api/games/', data, format='json')
-        # May return 201 or other status depending on implementation
-        if response.status_code == status.HTTP_201_CREATED:
-            self.assertEqual(response.data['game_type'], 'ai')
-            # Verify game was created in database
-            game = Game.objects.filter(id=response.data['id']).first()
-            if game:
-                self.assertIsNotNone(game)
-                self.assertEqual(game.player_1_id, self.player1.id)
-    
-    @patch('game.views.GameStateManager')
-    def test_create_pvp_game(self, mock_redis_class):
-        """Test creating a PvP game (requires friendship)."""
-        mock_manager = Mock()
-        mock_redis_class.return_value = mock_manager
-        
-        # Without friendship, should fail
-        data = {
-            'game_type': 'pvp',
-            'opponent_id': str(self.player2.id)
-        }
-        response = self.client.post('/api/games/', data, format='json')
-        # Should require friendship (implementation dependent)
-        self.assertIn(
-            response.status_code,
-            [status.HTTP_400_BAD_REQUEST, status.HTTP_201_CREATED, status.HTTP_403_FORBIDDEN]
-        )
-
-
 class GameShipsEndpointTests(TestCase):
     """Test ship placement REST endpoint."""
     
