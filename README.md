@@ -52,12 +52,21 @@ The application is built as a microservices-based Single Page Application
 
 3. Start the application:
    ```bash
+   # CRITICAL: Always stop old containers before starting
+   docker-compose down
+   
    # First run (builds containers in detached mode)
    docker-compose up --build -d
 
-   # Subsequent runs (skip build if no Dockerfile changes, always use -d)
+   # Subsequent runs (always stop first, then start with -d)
+   docker-compose down
    docker-compose up -d
    ```
+   
+   **Important Notes:**
+   - Always run `docker-compose down` before starting to clean up old containers
+   - Always use `-d` flag to run containers in detached mode (without it, containers stop when terminal commands run)
+   - Run migrations after updating models: `docker-compose exec backend python manage.py migrate`
 
    **Note**: Always use the `-d` flag to run containers in detached mode. Without it, containers will stop when running terminal commands.
 

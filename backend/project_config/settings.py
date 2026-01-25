@@ -21,6 +21,10 @@ INSTALLED_APPS = [
     'social',
 ]
 
+# Custom User Model - Do NOT add django.contrib.auth or django.contrib.contenttypes
+# to INSTALLED_APPS as we use a fully custom data model without Django's built-in tables
+AUTH_USER_MODEL = 'authentication.User'
+
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -29,6 +33,9 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'project_config.urls'
 WSGI_APPLICATION = 'project_config.wsgi.application'
 ASGI_APPLICATION = 'project_config.asgi.application'
+
+# Redis Configuration
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 
 # Channel Layers (Redis)
 CHANNEL_LAYERS = {
