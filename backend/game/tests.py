@@ -217,7 +217,7 @@ class GameAuthorizationAPITests(TestCase):
         self.assertIn(response.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
 
 
-class GameViewsDetailedTests(TestCase):
+class GameViewsAuthDetailedTests(TestCase):
     """Detailed game view tests for coverage improvement."""
     
     def setUp(self):
