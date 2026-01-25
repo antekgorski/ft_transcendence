@@ -2,7 +2,7 @@ import uuid
 import json
 from datetime import datetime, timedelta
 from django.utils import timezone
-from django.db.models import Q, F
+from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
