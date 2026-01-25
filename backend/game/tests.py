@@ -143,7 +143,7 @@ class GameShipsEndpointTests(TestCase):
             self.assertFalse(response1.data['both_ready'])
 
 
-class GameAuthorizationTests(TestCase):
+class GameAuthorizationAPITests(TestCase):
     """Test game authorization."""
     
     def setUp(self):
