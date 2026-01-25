@@ -838,7 +838,8 @@ class GameRedisManagerAdvancedTests(TestCase):
     def tearDown(self):
         try:
             self.redis_manager.delete_game(self.game_id)
-        except:
+        except Exception:
+            # Ignore cleanup errors in tests (game may already be deleted or Redis unavailable)
             pass
     
     def test_get_user_last_seen(self):
