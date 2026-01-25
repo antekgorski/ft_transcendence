@@ -6,9 +6,11 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Security
-SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError('SECRET_KEY environment variable must be set')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,backend').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 INSTALLED_APPS = [
     'daphne',
@@ -24,9 +26,9 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
 ]
 
-ROOT_URLCONF = 'battleship_config.urls'
-WSGI_APPLICATION = 'battleship_config.wsgi.application'
-ASGI_APPLICATION = 'battleship_config.asgi.application'
+ROOT_URLCONF = 'project_config.urls'
+WSGI_APPLICATION = 'project_config.wsgi.application'
+ASGI_APPLICATION = 'project_config.asgi.application'
 
 # Channel Layers (Redis)
 CHANNEL_LAYERS = {

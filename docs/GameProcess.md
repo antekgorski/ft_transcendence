@@ -253,28 +253,38 @@ sequenceDiagram
     WS->>Backend: Connection lost for Player 1
     Backend->>Backend: Start 60-second timer
     
+    Backend->>WS: Notify Player 2
+    WS->>Frontend2: Opponent disconnected,<br/>waiting for reconnection (60s)
+    Frontend2-->>Player2: Show "Waiting for opponent..."
+    
     alt Player reconnects within 60s
         Frontend1->>Backend: WebSocket reconnect<br/>(JWT from cookie)
         Backend->>Backend: Verify JWT<br/>Find active game
+        
         Backend->>Redis: Get game session
         Redis-->>Backend: Current game state
+        
         Backend->>WS: Restore connection
         WS->>Frontend1: Game state sync
         Frontend1->>Frontend1: Restore board state
         Frontend1-->>Player1: Resume game
+        
         Backend->>WS: Notify Player 2
         WS->>Frontend2: Opponent reconnected
+        Frontend2-->>Player2: Resume game
     else Timeout (60 seconds)
-        Backend->>DB: UPDATE Game SET<br/>- winner_id = player_2_id<br/>- ended_at = CURRENT_TIMESTAMP
+        Backend->>Backend: Mark disconnected player as loser
+        
+        Backend->>DB: UPDATE Game SET<br/>status = 'forfeited',<br/>winner_id = player_2_id,<br/>ended_at = CURRENT_TIMESTAMP,<br/>duration_seconds
         DB-->>Backend: Updated
         
-        Backend->>DB: UPDATE PlayerStats
+        Backend->>DB: UPDATE PlayerStats<br/>for both players
         DB-->>Backend: Updated
         
         Backend->>Redis: Delete game session
         Redis-->>Backend: Deleted
         
-        Backend->>WS: Notify Player 2
+        Backend->>WS: Broadcast game_over<br/>{winner: player_2_id, reason: 'disconnect_timeout'}
         WS->>Frontend2: Opponent disconnected, you win!
         Frontend2-->>Player2: Show victory screen
     end
@@ -333,11 +343,12 @@ sequenceDiagram
    - Authenticate WebSocket connections via JWT
    - Broadcast game events to both players
    - Handle player disconnections and reconnections
-   - Implement 60-second timeout for disconnects
+   - Implement 60-second grace period for reconnection (auto-loss if exceeded)
+   - Update game status in database on timeout (active → forfeited)
 
 5. **Game Completion**
    - Calculate final statistics
-   - Update database with game results
+   - Update database with game results (status = 'completed')
    - Update player statistics (wins, losses, accuracy, streaks)
    - Clean up Redis game sessions
 
@@ -351,6 +362,7 @@ INSERT INTO Game (
     player_1_id,
     player_2_id,
     game_type,
+    status,
     started_at,
     player_1_shots,
     player_1_hits,
@@ -361,6 +373,7 @@ INSERT INTO Game (
     player1_id,
     player2_id,  -- NULL for AI games
     'pvp',       -- or 'ai'
+    'pending',   -- initial status
     CURRENT_TIMESTAMP,
     0, 0, 0, 0
 );
@@ -371,6 +384,7 @@ INSERT INTO Game (
 -- Update game with results
 UPDATE Game 
 SET winner_id = winner_player_id,
+    status = 'completed',
     ended_at = CURRENT_TIMESTAMP,
     duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at)),
     player_1_shots = final_p1_shots,
@@ -405,6 +419,28 @@ SET games_played = games_played + 1,
     current_win_streak = 0,
     updated_at = CURRENT_TIMESTAMP
 WHERE user_id = loser_id;
+```
+
+#### Handle Player Reconnection
+```sql
+-- Reconnection succeeds - game continues unchanged
+-- No database update needed, game remains in 'active' status
+-- Redis session is retrieved and sent to reconnected client
+```
+
+#### Handle Disconnection Timeout
+```sql
+-- End game due to timeout (60 seconds) - disconnected player loses
+UPDATE Game
+SET status = 'forfeited',
+    winner_id = remaining_player_id,
+    ended_at = CURRENT_TIMESTAMP,
+    duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))
+WHERE id = game_id
+  AND status = 'active';
+
+-- Update player stats (same as forfeit)
+-- [Winner and loser stats updates as shown above]
 ```
 
 #### Get Player Game History

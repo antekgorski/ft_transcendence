@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile
     container_name: ft_transcendence_nginx
     ports:
-      - "80:80"
+      - "8080:80"
     depends_on:
       - frontend
       - backend
@@ -43,16 +43,14 @@ services:
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT}
       DB_SSLMODE: ${DB_SSLMODE}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
       - ./backend:/app
-    ports:
-      - "8000:8000"
     depends_on:
       - redis
     networks:
       - transcendence_network
-    command: python manage.py runserver 0.0.0.0:8000
+    command: daphne -b 0.0.0.0 -p 8000 project_config.asgi:application
 
   # Frontend (React Dev Server with Hot Reload)
   frontend:
@@ -63,14 +61,12 @@ services:
     env_file:
       - .env
     environment:
-      - REACT_APP_API_URL=/api
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
+      - REACT_APP_API_URL=http://localhost:8080/api
+      - CHOKIDAR_USEPOLLING=1
+      - WATCHPACK_POLLING=1
     volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-    ports:
-      - "3000:3000"
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - backend
     networks:

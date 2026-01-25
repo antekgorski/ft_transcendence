@@ -52,12 +52,14 @@ The application is built as a microservices-based Single Page Application
 
 3. Start the application:
    ```bash
-   # First run (builds containers)
-   docker-compose up --build
+   # First run (builds containers in detached mode)
+   docker-compose up --build -d
 
-   # Subsequent runs (skip build if no Dockerfile changes)
-   docker-compose up
+   # Subsequent runs (skip build if no Dockerfile changes, always use -d)
+   docker-compose up -d
    ```
+
+   **Note**: Always use the `-d` flag to run containers in detached mode. Without it, containers will stop when running terminal commands.
 
 4. Access the app at `http://localhost`
 
@@ -256,6 +258,7 @@ erDiagram
         uuid player_1_id FK
         uuid player_2_id FK "null for AI opponent"
         string game_type "pvp|ai"
+        string status "pending|active|completed|forfeited"
         uuid winner_id FK
         int duration_seconds
         int player_1_shots
