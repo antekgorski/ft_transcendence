@@ -331,7 +331,7 @@ class GameViewsAuthDetailedTests(TestCase):
         self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_404_NOT_FOUND, status.HTTP_405_METHOD_NOT_ALLOWED])
 
 
-class SocialViewsDetailedTests(TestCase):
+class SocialViewsAdditionalTests(TestCase):
     """Detailed social view tests for coverage improvement."""
     
     def setUp(self):
