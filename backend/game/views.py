@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.db.models import Q
