@@ -14,7 +14,6 @@ from game.models import Game, PlayerStats
 from game.ai_opponent import AIOpponent
 from game.redis_manager import GameStateManager
 from unittest.mock import Mock, patch
-import json
 import uuid
 
 User = get_user_model()
