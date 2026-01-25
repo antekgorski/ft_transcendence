@@ -265,19 +265,15 @@ class GameConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _get_user_from_token(self):
         """Extract user from JWT token in cookie (placeholder for future JWT implementation)."""
-        try:
-            # TODO: Implement JWT authentication with rest_framework_simplejwt
-            # For now, return None - WebSocket auth will be handled via separate endpoint
-            # token_str = self.scope.get('cookies', {}).get('access_token')
-            # token = AccessToken(token_str)
-            # user_id = token.get('user_id')
-            # from authentication.models import User
-            # user = User.objects.get(id=user_id, is_active=True)
-            # return user
-            return None
-        
-        except Exception as e:
-            return None
+        # TODO: Implement JWT authentication with rest_framework_simplejwt
+        # For now, return None - WebSocket auth will be handled via separate endpoint
+        # token_str = self.scope.get('cookies', {}).get('access_token')
+        # token = AccessToken(token_str)
+        # user_id = token.get('user_id')
+        # from authentication.models import User
+        # user = User.objects.get(id=user_id, is_active=True)
+        # return user
+        return None
     
     @database_sync_to_async
     def _verify_user_in_game(self, game_id):
