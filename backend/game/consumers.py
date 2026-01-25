@@ -5,7 +5,6 @@ from channels.db import database_sync_to_async
 # JWT authentication will be implemented in future - for now use custom auth
 # from rest_framework_simplejwt.tokens import AccessToken
 from .redis_manager import GameStateManager
-from social.models import Friendship
 
 
 class GameConsumer(AsyncWebsocketConsumer):
