@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta
 from django.utils import timezone
 from django.db.models import Q
 from rest_framework import viewsets, status
