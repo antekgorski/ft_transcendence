@@ -411,13 +411,9 @@ class NotificationConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _get_user_from_token_notification(self):
         """Extract user from JWT token (placeholder for future JWT implementation)."""
-        try:
-            # TODO: Implement JWT authentication with rest_framework_simplejwt
-            # For now, return None - WebSocket auth will be handled via separate endpoint
-            return None
-        
-        except Exception:
-            return None
+        # TODO: Implement JWT authentication with rest_framework_simplejwt
+        # For now, return None - WebSocket auth will be handled via separate endpoint
+        return None
     
     @database_sync_to_async
     def _mark_notification_read(self, notification_id):
