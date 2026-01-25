@@ -1170,6 +1170,7 @@ class RedisManagerTests(TestCase):
         try:
             self.redis_manager.delete_game(self.game_id)
         except:
+            # Intentionally ignore cleanup errors (e.g., game already deleted or Redis unavailable)
             pass
     
     def test_redis_connection(self):
