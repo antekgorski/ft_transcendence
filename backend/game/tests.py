@@ -24,29 +24,6 @@ User = get_user_model()
 # REST API TESTS (ORIGINAL)
 # ============================================================================
 
-class GameShipsEndpointTests(TestCase):
-    """Test ship placement REST endpoint."""
-    
-    def setUp(self):
-        self.client = APIClient()
-        self.player1 = User.objects.create_user(
-            username='player1',
-            email='player1@example.com',
-            password='SecurePass123!'
-        )
-        self.player2 = User.objects.create_user(
-            username='player2',
-            email='player2@example.com',
-            password='SecurePass123!'
-        )
-        self.game = Game.objects.create(
-            player_1=self.player1,
-            player_2=self.player2,
-            game_type='pvp',
-            status='active'
-        )
-        self.client.force_authenticate(user=self.player1)
-    
     @patch('game.views.GameStateManager')
     def test_place_ships_success(self, mock_redis_class):
         """Test placing ships successfully."""
