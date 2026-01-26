@@ -10,10 +10,7 @@ from .serializers import (
 from .serializers import (
     GameSerializer,
     GameCreateSerializer,
-    GameStatusUpdateSerializer,
-    GameMoveSerializer,
     GameEndSerializer,
-    PlayerStatsSerializer,
     LeaderboardSerializer,
 )
 from authentication.models import User
