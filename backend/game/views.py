@@ -17,7 +17,7 @@ from .serializers import (
     LeaderboardSerializer,
 )
 from authentication.models import User
-from social.models import Friendship, Notification
+from social.models import Friendship
 from .redis_manager import GameStateManager
 from .ai_opponent import AIOpponent
 
