@@ -423,4 +423,5 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             notification.read_at = timezone.now()
             notification.save(update_fields=['is_read', 'read_at'])
         except Notification.DoesNotExist:
+            # Notification does not exist or no longer belongs to this user; safe to ignore.
             pass
