@@ -1093,7 +1093,7 @@ class RedisManagerTests(TestCase):
         """Clean up Redis after each test."""
         try:
             self.redis_manager.delete_game(self.game_id)
-        except:
+        except Exception:
             # Intentionally ignore cleanup errors (e.g., game already deleted or Redis unavailable)
             pass
     
