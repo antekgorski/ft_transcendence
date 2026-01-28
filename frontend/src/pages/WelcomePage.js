@@ -55,16 +55,18 @@ function WelcomePage({ onLogin }) {
         const data = await response.json();
 
         if (response.ok) {
-          setSuccess('Registration successful! You can now login.');
-          setIsLogin(true);
-          setFormData({
-            username: '',
-            email: '',
-            password: '',
-            passwordConfirm: ''
-          });
+          // Save user data to localStorage after registration
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setSuccess('Registration successful! Logging you in...');
+          
+          // Auto-login after successful registration
+          setTimeout(() => {
+            if (onLogin) {
+              onLogin(data.user);
+            }
+          }, 1000);
         } else {
-          setError(data.error || 'Registration failed');
+          setError(data.error || data.error_pl || 'Registration failed');
         }
       } catch (err) {
         setError('Network error. Please try again.');
@@ -73,9 +75,44 @@ function WelcomePage({ onLogin }) {
         setLoading(false);
       }
     } else {
-      console.log('Login submitted:', formData);
-      if (onLogin) {
-        onLogin();
+      // Login
+      if (!formData.username || !formData.password) {
+        setError('Username and password are required');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/login/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            identifier: formData.username,
+            password: formData.password,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Save user data to localStorage
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setSuccess('Login successful!');
+          
+          // Call onLogin with user data
+          if (onLogin) {
+            onLogin(data.user);
+          }
+        } else {
+          setError(data.error || data.error_pl || 'Login failed');
+        }
+      } catch (err) {
+        setError('Network error. Please try again.');
+        console.error('Login error:', err);
+      } finally {
+        setLoading(false);
       }
     }
   };
