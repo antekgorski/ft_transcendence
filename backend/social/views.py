@@ -278,10 +278,12 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def unread(self, request):
         """Get count of unread notifications."""
         user = request.user
+        from django.db.models import Q
         count = Notification.objects.filter(
             user=user,
-            is_read=False,
-            expires_at__gt=timezone.now()
+            is_read=False
+        ).filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
         ).count()
         
         return Response({'unread_count': count})
