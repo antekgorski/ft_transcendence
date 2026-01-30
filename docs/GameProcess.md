@@ -275,7 +275,7 @@ sequenceDiagram
     else Timeout (60 seconds)
         Backend->>Backend: Mark disconnected player as loser
         
-        Backend->>DB: UPDATE Game SET<br/>status = 'forfeited',<br/>winner_id = player_2_id,<br/>ended_at = CURRENT_TIMESTAMP,<br/>duration_seconds
+        Backend->>DB: UPDATE Game SET<br/>status = 'forfeited',<br/>winner_id = player_2_id,<br/>ended_at = CURRENT_TIMESTAMP,<br/>duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))
         DB-->>Backend: Updated
         
         Backend->>DB: UPDATE PlayerStats<br/>for both players

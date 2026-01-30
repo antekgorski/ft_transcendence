@@ -286,7 +286,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
         
         return Response({'unread_count': count})
     
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
     def mark_all_read(self, request):
         """Mark all notifications as read."""
         user = request.user

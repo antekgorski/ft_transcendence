@@ -1,7 +1,7 @@
 #from django.shortcuts import render
 
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import IntegrityError
@@ -187,6 +187,31 @@ def login(request):
                 "display_name": user.display_name,
                 "avatar_url": user.avatar_url,
             },
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profile(request):
+    """
+    Get current authenticated user's profile information.
+    """
+    user = request.user
+    return Response(
+        {
+            "user": {
+                "id": str(user.id),
+                "username": user.username,
+                "email": user.email,
+                "display_name": user.display_name,
+                "avatar_url": user.avatar_url,
+                "language": user.language,
+                "is_active": user.is_active,
+                "created_at": user.created_at.isoformat(),
+                "last_login": user.last_login.isoformat() if user.last_login else None,
+            }
         },
         status=status.HTTP_200_OK,
     )
