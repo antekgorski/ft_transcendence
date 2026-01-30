@@ -357,11 +357,15 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             elif message_type == 'ping':
                 await self.send(json.dumps({'type': 'pong'}))
             else:
+                # Ignore unknown message types; client is expected to send supported types only.
                 pass
         
         except json.JSONDecodeError:
+            # Ignore malformed JSON payloads; invalid messages are simply dropped.
             pass
         except Exception as e:
+            # Swallow unexpected errors to avoid breaking the WebSocket connection.
+            # Consider adding logging here if more visibility into failures is needed.
             pass
     
     async def _handle_mark_read(self, data):
