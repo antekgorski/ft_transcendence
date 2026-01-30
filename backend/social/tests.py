@@ -180,12 +180,12 @@ class FriendshipAdvancedTests(TestCase):
     def test_get_friends_list(self):
         """Test getting friends list."""
         # Create some friendships
-        f1 = Friendship.objects.create(
+        Friendship.objects.create(
             requester=self.user1,
             addressee=self.user2,
             status='accepted'
         )
-        f2 = Friendship.objects.create(
+        Friendship.objects.create(
             requester=self.user3,
             addressee=self.user1,
             status='accepted'
