@@ -262,15 +262,19 @@ class GameConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def _get_user_from_token(self):
-        """Extract user from JWT token in cookie (placeholder for future JWT implementation)."""
-        # TODO: Implement JWT authentication with rest_framework_simplejwt
-        # For now, return None - WebSocket auth will be handled via separate endpoint
-        # token_str = self.scope.get('cookies', {}).get('access_token')
-        # token = AccessToken(token_str)
-        # user_id = token.get('user_id')
-        # from authentication.models import User
-        # user = User.objects.get(id=user_id, is_active=True)
-        # return user
+        """
+        Resolve the authenticated user for this WebSocket connection.
+
+        Currently uses the user attached to the connection scope by the
+        authentication middleware (e.g., AuthMiddlewareStack). JWT-based
+        lookup from cookies can be added here in the future if needed.
+        """
+        # If Django Channels' AuthMiddlewareStack is in use, the authenticated
+        # user (or an AnonymousUser) will be available on self.scope["user"].
+        user = self.scope.get("user")
+        if user is not None and getattr(user, "is_authenticated", False):
+            return user
+        # Fallback: no authenticated user available
         return None
     
     @database_sync_to_async
