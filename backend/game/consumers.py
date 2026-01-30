@@ -314,7 +314,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         """Handle WebSocket connection."""
         try:
-            user = await self._get_user_from_token()
+            user = await self._get_user_from_token_notification()
             if not user:
                 await self.close(code=4401)
                 return
