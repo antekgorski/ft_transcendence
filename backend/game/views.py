@@ -7,7 +7,6 @@ from rest_framework.permissions import IsAuthenticated
 
 from .models import Game, PlayerStats
 from .serializers import (
-from .serializers import (
     GameSerializer,
     GameCreateSerializer,
     GameEndSerializer,
