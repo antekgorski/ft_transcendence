@@ -1,6 +1,6 @@
 # Makefile for ft_transcendence
 
-.PHONY: all build up down restart logs clean re
+.PHONY: all build up down restart logs clean re admin
 
 all: build up
 
@@ -23,3 +23,6 @@ clean:
 	docker system prune -f
 
 re: clean build up
+
+admin:
+	docker compose exec backend python manage.py createsuperuser
