@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import WelcomePage from './pages/WelcomePage';
 import GameBoard from './pages/GameBoard';
+import ProfilePage from './pages/ProfilePage';
+import { AuthProvider, AuthContext } from './contexts/AuthContext';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -34,8 +36,17 @@ function App() {
 
   if (!isLoggedIn) {
     return <WelcomePage onLogin={handleLogin} />;
+function AppContent() {
+  const { user } = useContext(AuthContext);
+
+  if (!user) {
+    return <WelcomePage />;
   }
 
+  return <ProfilePage />;
+}
+
+function App() {
   return (
     <>
       {/*
@@ -56,6 +67,10 @@ function App() {
       */}
       <GameBoard userData={userData} onLogout={handleLogout} />
     </>
+    </div>
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
