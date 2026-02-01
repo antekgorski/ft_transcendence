@@ -11,6 +11,9 @@ RUN npm install
 # Copy Tailwind and PostCSS config files
 COPY tailwind.config.js postcss.config.js ./
 
+# Copy entire application source
+COPY . .
+
 EXPOSE 3000
 
 # Start React development server (auto-reloads on code changes)

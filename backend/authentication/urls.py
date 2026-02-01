@@ -1,7 +1,5 @@
 from django.urls import path
 from .views import register, login, get_current_user, logout
-from .views import register
-from .views import login
 # from (42 OAuth)
 from .views import oauth_42_start, oauth_42_callback
 
@@ -11,6 +9,8 @@ urlpatterns = [
     path('register/', register, name='register'),
     # Login endpoint
     path('login/', login, name='login'),
+    # Profile endpoint - get current user info
+    path('profile/', profile, name='profile'),
     # Current user endpoint
     path('me/', get_current_user, name='get_current_user'),
     # Logout endpoint
