@@ -9,10 +9,18 @@ class Game(models.Model):
         ('ai', 'Player vs AI'),
     ]
 
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+        ('forfeited', 'Forfeited'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     player_1 = models.ForeignKey('authentication.User', on_delete=models.CASCADE, related_name='games_as_player1')
     player_2 = models.ForeignKey('authentication.User', on_delete=models.CASCADE, related_name='games_as_player2', null=True, blank=True)
     game_type = models.CharField(max_length=10, choices=GAME_TYPES, default='pvp')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     winner = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, related_name='games_won', null=True, blank=True)
     duration_seconds = models.IntegerField(default=0)
     player_1_shots = models.IntegerField(default=0)
@@ -24,6 +32,12 @@ class Game(models.Model):
 
     class Meta:
         db_table = 'games'
+        indexes = [
+            models.Index(fields=['winner']),
+            models.Index(fields=['started_at']),
+            models.Index(fields=['player_1', 'ended_at']),
+            models.Index(fields=['player_2', 'ended_at']),
+        ]
 
 
 class PlayerStats(models.Model):

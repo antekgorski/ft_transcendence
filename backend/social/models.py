@@ -20,6 +20,10 @@ class Friendship(models.Model):
     class Meta:
         db_table = 'friendships'
         unique_together = ['requester', 'addressee']
+        indexes = [
+            models.Index(fields=['addressee', 'status']),
+            models.Index(fields=['requester', 'status']),
+        ]
 
 
 class Notification(models.Model):
@@ -38,3 +42,8 @@ class Notification(models.Model):
 
     class Meta:
         db_table = 'notifications'
+        indexes = [
+            models.Index(fields=['is_read']),
+            models.Index(fields=['expires_at']),
+            models.Index(fields=['user', 'is_read']),
+        ]

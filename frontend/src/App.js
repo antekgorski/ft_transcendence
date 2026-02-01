@@ -1,6 +1,5 @@
 import React, { useContext } from 'react';
 import WelcomePage from './pages/WelcomePage';
-import GameBoard from './pages/GameBoard';
 import ProfilePage from './pages/ProfilePage';
 import { AuthProvider, AuthContext } from './contexts/AuthContext';
 

@@ -6,9 +6,11 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Security
-SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError('SECRET_KEY environment variable must be set')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,backend').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 INSTALLED_APPS = [
     'daphne',
@@ -25,6 +27,10 @@ INSTALLED_APPS = [
     'social',
 ]
 
+# Custom User Model - Do NOT add django.contrib.auth or django.contrib.contenttypes
+# to INSTALLED_APPS as we use a fully custom data model without Django's built-in tables
+AUTH_USER_MODEL = 'authentication.User'
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -36,7 +42,13 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'battleship_config.urls'
+ROOT_URLCONF = 'project_config.urls'
+WSGI_APPLICATION = 'project_config.wsgi.application'
+ASGI_APPLICATION = 'project_config.asgi.application'
+
+# Redis Configuration
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+ROOT_URLCONF = 'project_config.urls'
 
 TEMPLATES = [
     {
@@ -54,8 +66,8 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'battleship_config.wsgi.application'
-ASGI_APPLICATION = 'battleship_config.asgi.application'
+WSGI_APPLICATION = 'project_config.wsgi.application'
+ASGI_APPLICATION = 'project_config.asgi.application'
 
 # Channel Layers (Redis)
 CHANNEL_LAYERS = {
@@ -129,8 +141,12 @@ REST_FRAMEWORK = {
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
     ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
-    'DEFAULT_PERMISSION_CLASSES': [],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
     'UNAUTHENTICATED_USER': None,
 }
 
