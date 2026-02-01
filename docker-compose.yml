@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile
     container_name: ft_transcendence_nginx
     ports:
-      - "80:80"
+      - "8080:80"
     depends_on:
       - frontend
       - backend
@@ -63,7 +63,7 @@ services:
     env_file:
       - .env
     environment:
-      - REACT_APP_API_URL=/api
+      - REACT_APP_API_URL=http://localhost:8000/api
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
     volumes:

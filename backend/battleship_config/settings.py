@@ -86,3 +86,8 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [],
     'UNAUTHENTICATED_USER': None,
 }
+
+# 42 OAuth Settings
+FORTY_TWO_CLIENT_ID = os.getenv('FORTY_TWO_CLIENT_ID')
+FORTY_TWO_CLIENT_SECRET = os.getenv('FORTY_TWO_CLIENT_SECRET')
+FORTY_TWO_REDIRECT_URI = os.getenv('FORTY_TWO_REDIRECT_URI', 'http://localhost:8000/api/auth/oauth/42/callback/')
