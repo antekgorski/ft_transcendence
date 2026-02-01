@@ -165,6 +165,10 @@ def login(request):
     user.last_login = timezone.now()
     user.save(update_fields=["last_login"])
 
+    # Zapisz użytkownika w sesji
+    request.session['user_id'] = str(user.id)
+    request.session['username'] = user.username
+
     return Response(
         {
             "message": "Login successful.",
@@ -180,6 +184,64 @@ def login(request):
         status=status.HTTP_200_OK,
     )
 
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_current_user(request):
+    """
+    Endpoint sprawdzający aktualną sesję użytkownika.
+    Zwraca dane zalogowanego użytkownika lub 401 jeśli niezalogowany.
+    """
+    user_id = request.session.get('user_id')
+    
+    if not user_id:
+        return Response(
+            {
+                "error": "Authentication required.",
+                "error_pl": "Wymagane uwierzytelnienie.",
+            },
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    
+    try:
+        user = User.objects.get(id=user_id)
+        return Response(
+            {
+                "id": str(user.id),
+                "username": user.username,
+                "email": user.email,
+                "display_name": user.display_name,
+                "avatar_url": user.avatar_url,
+            },
+            status=status.HTTP_200_OK,
+        )
+    except User.DoesNotExist:
+        # Sesja ma nieprawidłowe dane - wyczyść sesję
+        request.session.flush()
+        return Response(
+            {
+                "error": "User not found.",
+                "error_pl": "Użytkownik nie znaleziony.",
+            },
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def logout(request):
+    """
+    Endpoint wylogowujący użytkownika.
+    Usuwa sesję użytkownika.
+    """
+    request.session.flush()
+    return Response(
+        {
+            "message": "Logout successful.",
+            "message_pl": "Wylogowanie powiodło się.",
+        },
+        status=status.HTTP_200_OK,
+    )
 # 42 OAuth Login View
 
 @api_view(['GET'])

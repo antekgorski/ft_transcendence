@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import API_BASE_URL from '../config';
+import { AuthContext } from '../contexts/AuthContext';
 
 function WelcomePage({ onLogin }) {
+  const { checkAuth } = useContext(AuthContext);
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     username: '',
@@ -73,9 +75,38 @@ function WelcomePage({ onLogin }) {
         setLoading(false);
       }
     } else {
-      console.log('Login submitted:', formData);
-      if (onLogin) {
-        onLogin();
+      // Login
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/login/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include', // Ważne - wysyła i odbiera ciasteczka
+          body: JSON.stringify({
+            identifier: formData.username,
+            password: formData.password,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          console.log('Login successful:', data.user);
+          // Odśwież dane użytkownika w AuthContext
+          await checkAuth();
+          if (onLogin) {
+            onLogin();
+          }
+        } else {
+          setError(data.error || 'Login failed');
+        }
+      } catch (err) {
+        setError('Network error. Please try again.');
+        console.error('Login error:', err);
+      } finally {
+        setLoading(false);
       }
     }
   };
