@@ -62,6 +62,7 @@ erDiagram
         uuid player_1_id FK
         uuid player_2_id FK "null for AI opponent"
         string game_type "pvp|ai"
+        string status "pending|active|completed|forfeited"
         uuid winner_id FK
         int duration_seconds
         int player_1_shots
@@ -93,7 +94,13 @@ Stores all user account information including OAuth integration (42 Intra), lang
 Tracks comprehensive statistics for each player including win/loss ratios, accuracy, and streaks. Updated after each completed game.
 
 #### Game
-Historical record of completed games with summary statistics. Stores final results and performance metrics for both players.
+Historical record of completed games with summary statistics. Stores final results and performance metrics for both players. Includes status tracking for game lifecycle:
+- `pending`: Game created, waiting for opponent acceptance
+- `active`: Game in progress, players taking turns
+- `completed`: Game finished normally with a winner
+- `forfeited`: Game ended due to forfeit or player timeout during disconnection
+
+Games are always real-time. If a player disconnects, they have 60 seconds to reconnect before automatically forfeiting.
 
 #### Friendship
 Manages friend connections with pending/accepted/blocked states.
