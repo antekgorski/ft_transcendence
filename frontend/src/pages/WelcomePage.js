@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import API_BASE_URL from '../config';
+import { AuthContext } from '../contexts/AuthContext';
 
 function WelcomePage({ onLogin }) {
+  const { checkAuth } = useContext(AuthContext);
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     username: '',
@@ -228,6 +230,15 @@ function WelcomePage({ onLogin }) {
               {loading 
                 ? (isLogin ? 'LOGGING IN...' : 'REGISTERING...') 
                 : (isLogin ? 'LOGIN' : 'REGISTER')}
+            </button>
+            
+          <button
+              type="button"
+              onClick={() => window.location.href = `${API_BASE_URL}/auth/oauth/42/start/`}
+              className="w-full py-3 bg-blue-600 text-white font-bold uppercase rounded-md
+                         hover:bg-blue-700 transition-all"
+            >
+              Sign in with 42
             </button>
 
             <p className="text-center text-gray-600 mt-2">

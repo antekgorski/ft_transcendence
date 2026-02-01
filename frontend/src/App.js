@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import WelcomePage from './pages/WelcomePage';
+import ProfilePage from './pages/ProfilePage';
+import { AuthProvider, AuthContext } from './contexts/AuthContext';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -33,9 +35,17 @@ function App() {
 
   if (!isLoggedIn) {
     return <WelcomePage onLogin={handleLogin} />;
+function AppContent() {
+  const { user } = useContext(AuthContext);
+
+  if (!user) {
+    return <WelcomePage />;
   }
 
-  // TODO: Add main app content after login
+  return <ProfilePage />;
+}
+
+function App() {
   return (
     <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
       <div className="text-center">
@@ -51,6 +61,9 @@ function App() {
         </button>
       </div>
     </div>
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
