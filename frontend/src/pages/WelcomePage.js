@@ -57,16 +57,18 @@ function WelcomePage({ onLogin }) {
         const data = await response.json();
 
         if (response.ok) {
-          setSuccess('Registration successful! You can now login.');
-          setIsLogin(true);
-          setFormData({
-            username: '',
-            email: '',
-            password: '',
-            passwordConfirm: ''
-          });
+          // Save user data to localStorage after registration
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setSuccess('Registration successful! Logging you in...');
+          
+          // Auto-login after successful registration
+          setTimeout(() => {
+            if (onLogin) {
+              onLogin(data.user);
+            }
+          }, 1000);
         } else {
-          setError(data.error || 'Registration failed');
+          setError(data.error || data.error_pl || 'Registration failed');
         }
       } catch (err) {
         setError('Network error. Please try again.');
@@ -76,14 +78,18 @@ function WelcomePage({ onLogin }) {
       }
     } else {
       // Login
+      if (!formData.username || !formData.password) {
+        setError('Username and password are required');
+        return;
+      }
+
       setLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/auth/login/`, {
+        const response = await fetch(`${API_BASE_URL}/auth/login/`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          credentials: 'include', // Ważne - wysyła i odbiera ciasteczka
           body: JSON.stringify({
             identifier: formData.username,
             password: formData.password,
@@ -93,14 +99,16 @@ function WelcomePage({ onLogin }) {
         const data = await response.json();
 
         if (response.ok) {
-          console.log('Login successful:', data.user);
-          // Odśwież dane użytkownika w AuthContext
-          await checkAuth();
+          // Save user data to localStorage
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setSuccess('Login successful!');
+          
+          // Call onLogin with user data
           if (onLogin) {
-            onLogin();
+            onLogin(data.user);
           }
         } else {
-          setError(data.error || 'Login failed');
+          setError(data.error || data.error_pl || 'Login failed');
         }
       } catch (err) {
         setError('Network error. Please try again.');
