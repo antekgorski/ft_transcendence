@@ -9,8 +9,6 @@ urlpatterns = [
     path('register/', register, name='register'),
     # Login endpoint
     path('login/', login, name='login'),
-    # Profile endpoint - get current user info
-    path('profile/', profile, name='profile'),
     # Current user endpoint
     path('me/', get_current_user, name='get_current_user'),
     # Logout endpoint

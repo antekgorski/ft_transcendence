@@ -26,6 +26,8 @@ services:
       - .env
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+    expose:
+      - "6379"
     networks:
       - transcendence_network
 
@@ -48,13 +50,15 @@ services:
       DB_PORT: ${DB_PORT}
       DB_SSLMODE: ${DB_SSLMODE}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    expose:
+      - "8000"
     volumes:
       - ./backend:/app
     depends_on:
       - redis
     networks:
       - transcendence_network
-    command: daphne -b 0.0.0.0 -p 8000 project_config.asgi:application
+    command: daphne -b ${BACKEND_HOST} -p ${BACKEND_PORT} project_config.asgi:application
 
   # Frontend (React Dev Server with Hot Reload)
   frontend:
@@ -65,9 +69,10 @@ services:
     env_file:
       - .env
     environment:
-      - REACT_APP_API_URL=http://localhost:8080/api
       - CHOKIDAR_USEPOLLING=1
       - WATCHPACK_POLLING=1
+    expose:
+      - "3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -10,9 +10,17 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     try {
-      // Zapytanie do endpointu, który sprawdza sesję (np. /api/auth/me)
-      const res = await axios.get(`${API_BASE_URL}/api/auth/me/`, { withCredentials: true });
-      setUser(res.data); // Ustawiamy dane użytkownika (np. {id: 1, username: 'Jan'})
+      // First, check if user is in localStorage (from OAuth or previous login)
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+        setLoading(false);
+        return;
+      }
+
+      // Otherwise, try to verify session with backend
+      const res = await axios.get(`${API_BASE_URL}/me/`, { withCredentials: true });
+      setUser(res.data);
     } catch (err) {
       setUser(null);
     } finally {
@@ -21,7 +29,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    checkAuth(); // Sprawdź przy starcie aplikacji
+    checkAuth(); // Check auth on app mount
   }, []);
 
   return (

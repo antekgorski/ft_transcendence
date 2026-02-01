@@ -23,9 +23,10 @@ function AppContent() {
   }
 
   return (
-    <>
-      <GameBoard userData={user} onLogout={handleLogout} />
-    </>
+    // <>
+    //   <GameBoard userData={user} onLogout={handleLogout} />
+    // </>
+    <ProfilePage userData={user} onLogout={handleLogout} />
   );
 }
 

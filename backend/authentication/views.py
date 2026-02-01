@@ -59,14 +59,14 @@ def register(request):
         )
 
     try:
-        # Create new user
+        # Create new user with hashed password
         user = User(
             username=username,
             email=email,
-            display_name=username,  # Default display_name to username
+            display_name=username,
         )
-        user.set_password(password)  # Hash the password
-        user.save()
+        user.set_password(password)  # Hash and set the password BEFORE saving
+        user.save()  # Now save with the password included
 
         return Response(
             {
@@ -361,21 +361,35 @@ def oauth_42_callback(request):
     user.last_login = timezone.now()
     user.save(update_fields=["last_login"])
 
-    # Return user data (frontend can save this and treat as logged in)
-    return Response(
-        {
-            "message": "Login via 42 successful",
-            "message_pl": "Logowanie przez 42 powiodło się",
-            "user": {
-                "id": str(user.id),
-                "username": user.username,
-                "email": user.email,
-                "display_name": user.display_name,
-                "avatar_url": user.avatar_url,
-                "oauth_provider": user.oauth_provider,
-                "created_at": user.created_at.isoformat(),
-                "last_login": user.last_login.isoformat() if user.last_login else None,
-            },
-        },
-        status=status.HTTP_200_OK
-    )
+    # Prepare user data
+    user_data = {
+        "id": str(user.id),
+        "username": user.username,
+        "email": user.email,
+        "display_name": user.display_name,
+        "avatar_url": user.avatar_url,
+        "oauth_provider": user.oauth_provider,
+        "created_at": user.created_at.isoformat(),
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+    }
+    
+    # Return HTML page that stores user data and redirects to frontend
+    import json
+    html_response = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Logging in...</title>
+    </head>
+    <body>
+        <script>
+            // Store user data in localStorage
+            localStorage.setItem('user', JSON.stringify({json.dumps(user_data)}));
+            // Redirect to home page
+            window.location.href = '/';
+        </script>
+    </body>
+    </html>
+    """
+    from django.http import HttpResponse
+    return HttpResponse(html_response, content_type='text/html')
