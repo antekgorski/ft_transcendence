@@ -384,7 +384,8 @@ def oauth_42_callback(request):
     <body>
         <script>
             // Store user data in localStorage
-            localStorage.setItem('user', JSON.stringify({json.dumps(user_data)}));
+            const user = {json.dumps(user_data)};
+            localStorage.setItem('user', JSON.stringify(user));
             // Redirect to home page
             window.location.href = '/';
         </script>
