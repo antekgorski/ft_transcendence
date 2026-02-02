@@ -17,7 +17,7 @@ function AppContent() {
     // User data comes from backend - update context and recheck auth
     setUser(userData);
     checkAuth();
-    // Po zalogowaniu sprawdź czy była zapisana strona
+    // After login check if page was saved
     const saved = localStorage.getItem('lastPage');
     if (saved && (saved === 'game' || saved === 'profile')) {
       setCurrentPage(saved);

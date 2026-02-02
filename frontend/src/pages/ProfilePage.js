@@ -295,7 +295,7 @@ function Avatar() {
 function Body({ onNavigate }) {
   return (
     <div className="space-y-6 w-full max-w-6xl mx-auto">
-      {/* Przycisk powrotu do menu */}
+      {/* Menu return button */}
       <div className="mb-4">
         <button
           onClick={() => onNavigate('router')}
