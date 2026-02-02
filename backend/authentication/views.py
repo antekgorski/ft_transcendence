@@ -336,6 +336,62 @@ def set_avatar(request):
         )
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_profile(request):
+    """
+    Update user profile information (display_name)
+    """
+    try:
+        user = request.user
+        display_name = request.data.get('display_name')
+        
+        if not display_name:
+            return Response(
+                {
+                    "error": "display_name is required.",
+                    "error_pl": "display_name jest wymagane."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(display_name.strip()) == 0:
+            return Response(
+                {
+                    "error": "display_name cannot be empty.",
+                    "error_pl": "display_name nie może być puste."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user.display_name = display_name.strip()
+        user.save(update_fields=['display_name'])
+        
+        return Response(
+            {
+                "message": "Profile updated successfully.",
+                "message_pl": "Profil zaktualizowany pomyślnie.",
+                "user": {
+                    "id": str(user.id),
+                    "username": user.username,
+                    "email": user.email,
+                    "display_name": user.display_name,
+                    "avatar_url": user.avatar_url,
+                }
+            },
+            status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return Response(
+            {
+                "error": "Failed to update profile.",
+                "error_pl": "Nie udało się zaktualizować profilu.",
+                "details": str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
 # 42 OAuth Login View
 
 @api_view(['GET'])

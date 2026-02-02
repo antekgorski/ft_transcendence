@@ -71,28 +71,133 @@ function LogoutButton() {
   );
 }
 
+function DisplayNameEditor() {
+  const { user, checkAuth } = useContext(AuthContext);
+  const [isEditing, setIsEditing] = useState(false);
+  const [displayName, setDisplayName] = useState(user?.display_name || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    if (!displayName.trim()) {
+      setError('Display name cannot be empty');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/profile/update/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ display_name: displayName.trim() })
+      });
+
+      if (response.ok) {
+        await checkAuth();
+        setIsEditing(false);
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to update display name');
+      }
+    } catch (err) {
+      setError('Failed to update display name');
+      console.error('Error:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-4 border border-slate-700 mb-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-gray-400 text-sm">Display Name</p>
+          <p className="text-white font-semibold text-lg">{user?.display_name || 'N/A'}</p>
+        </div>
+        {!isEditing && (
+          <button
+            onClick={() => {
+              setDisplayName(user?.display_name || '');
+              setIsEditing(true);
+              setError('');
+            }}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md font-semibold text-white transition-colors"
+          >
+            Edit
+          </button>
+        )}
+      </div>
+
+      {isEditing && (
+        <div className="mt-4">
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Enter new display name"
+            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400 mb-3"
+          />
+          {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-500 rounded-md font-semibold text-white transition-colors"
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              onClick={() => {
+                setIsEditing(false);
+                setError('');
+              }}
+              className="px-4 py-2 bg-slate-600 hover:bg-slate-700 rounded-md font-semibold text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function PlayerStats() {
   const { user } = useContext(AuthContext);
   const [stats, setStats] = useState({
-    level: null,
-    wins: null,
-    losses: null,
-    winRate: null
+    gamesPlayed: null,
+    gamesWon: null,
+    gamesLost: null,
+    winRate: null,
+    totalShots: null,
+    totalHits: null,
+    accuracyPercentage: null,
+    longestWinStreak: null,
+    currentWinStreak: null,
+    bestGameDurationSeconds: null,
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/stats/me/`, {
+        const response = await fetch(`${API_BASE_URL}/games/stats/me/`, {
           credentials: 'include',
         });
         if (response.ok) {
           const data = await response.json();
           setStats(data);
+        } else {
+          console.error('Failed to fetch stats, status:', response.status);
         }
       } catch (err) {
         console.error('Failed to fetch stats:', err);
+      } finally {
+        setLoading(false);
       }
     };
     if (user?.id) {
@@ -100,17 +205,42 @@ function PlayerStats() {
     }
   }, [user?.id]);
 
+  const formatDuration = (seconds) => {
+    if (!seconds) return 'N/A';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  };
+
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-slate-700">
       <h2 className="text-2xl font-bold text-white mb-4">Player Profile</h2>
       <div className="text-gray-300 space-y-3">
         <p><span className="text-emerald-400 font-semibold">Username:</span> {user?.username || 'Loading...'}</p>
-        <p><span className="text-emerald-400 font-semibold">Display Name:</span> {user?.display_name || 'N/A'}</p>
         <p><span className="text-emerald-400 font-semibold">Email:</span> {user?.email || 'N/A'}</p>
-        <p><span className="text-emerald-400 font-semibold">Level:</span> {stats.level !== null ? stats.level : 'Loading...'}</p>
-        <p><span className="text-emerald-400 font-semibold">Wins:</span> {stats.wins !== null ? stats.wins : 'Loading...'}</p>
-        <p><span className="text-emerald-400 font-semibold">Losses:</span> {stats.losses !== null ? stats.losses : 'Loading...'}</p>
-        <p><span className="text-emerald-400 font-semibold">Win Rate:</span> {stats.winRate !== null ? `${stats.winRate}%` : 'Loading...'}</p>
+        
+        <hr className="border-slate-600 my-4" />
+        <h3 className="text-lg font-semibold text-emerald-400 mt-6 mb-3">Game Statistics</h3>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p><span className="text-emerald-400 font-semibold">Games Played:</span> {loading ? 'Loading...' : (stats.gamesPlayed ?? '0')}</p>
+            <p><span className="text-emerald-400 font-semibold">Games Won:</span> {loading ? 'Loading...' : (stats.gamesWon ?? '0')}</p>
+            <p><span className="text-emerald-400 font-semibold">Games Lost:</span> {loading ? 'Loading...' : (stats.gamesLost ?? '0')}</p>
+            <p><span className="text-emerald-400 font-semibold">Win Rate:</span> {loading ? 'Loading...' : (stats.winRate !== null ? `${stats.winRate}%` : 'N/A')}</p>
+          </div>
+          <div>
+            <p><span className="text-emerald-400 font-semibold">Total Shots:</span> {loading ? 'Loading...' : (stats.totalShots ?? '0')}</p>
+            <p><span className="text-emerald-400 font-semibold">Total Hits:</span> {loading ? 'Loading...' : (stats.totalHits ?? '0')}</p>
+            <p><span className="text-emerald-400 font-semibold">Accuracy:</span> {loading ? 'Loading...' : (stats.accuracyPercentage !== null ? `${stats.accuracyPercentage}%` : 'N/A')}</p>
+            <p><span className="text-emerald-400 font-semibold">Best Game Duration:</span> {loading ? 'Loading...' : formatDuration(stats.bestGameDurationSeconds)}</p>
+          </div>
+        </div>
+
+        <hr className="border-slate-600 my-4" />
+        <h3 className="text-lg font-semibold text-emerald-400 mt-6 mb-3">Streaks</h3>
+        <p><span className="text-emerald-400 font-semibold">Current Win Streak:</span> {loading ? 'Loading...' : (stats.currentWinStreak ?? '0')}</p>
+        <p><span className="text-emerald-400 font-semibold">Longest Win Streak:</span> {loading ? 'Loading...' : (stats.longestWinStreak ?? '0')}</p>
       </div>
     </div>
   );
@@ -246,9 +376,12 @@ function Avatar() {
 
 function Body() {
   return (
-    <div className="grid grid-cols-2 gap-8 w-full max-w-6xl mx-auto items-start">
-      <PlayerStats />
-      <Avatar />
+    <div className="space-y-6 w-full max-w-6xl mx-auto">
+      <DisplayNameEditor />
+      <div className="grid grid-cols-2 gap-8 items-start">
+        <PlayerStats />
+        <Avatar />
+      </div>
     </div>
   );
 }
