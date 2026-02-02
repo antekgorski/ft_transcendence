@@ -84,7 +84,7 @@ def register(request):
                     "username": user.username,
                     "email": user.email,
                     "display_name": user.display_name,
-                       "avatar_url": user.avatar_url,
+                    "avatar_url": user.avatar_url,
                     "created_at": user.created_at.isoformat()
                 }
             },
