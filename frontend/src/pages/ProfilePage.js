@@ -2,6 +2,8 @@ import React, { useState, useEffect, useContext } from 'react';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 
+const MEDIA_BASE_URL = process.env.REACT_APP_MEDIA_URL || API_BASE_URL.replace(/\/api\/?$/, '');
+
 // Helper to get CSRF token from cookie
 function getCsrfToken() {
   const name = 'csrftoken';
@@ -301,8 +303,6 @@ function Avatar() {
   const handleAvatarChange = async (avatarId) => {
     try {
       const csrfToken = getCsrfToken();
-      console.log('CSRF Token:', csrfToken);
-      console.log('Changing avatar to:', avatarId);
       const response = await fetch(`${API_BASE_URL}/auth/avatar/set/`, {
         method: 'POST',
         headers: { 
@@ -312,10 +312,8 @@ function Avatar() {
         credentials: 'include',
         body: JSON.stringify({ avatar: avatarId })
       });
-      console.log('Response status:', response.status);
       if (response.ok) {
-        const data = await response.json();
-        console.log('Avatar changed:', data);
+        await response.json();
         await checkAuth(); // Refresh user data
         setShowAvatarSelector(false);
       } else {
@@ -327,9 +325,7 @@ function Avatar() {
     }
   };
 
-  const avatarSrc = user?.avatar_url?.startsWith('http') ? user.avatar_url : `http://localhost:8080/media/${user?.avatar_url}`;
-  console.log('Avatar URL from user:', user?.avatar_url);
-  console.log('Final avatar src:', avatarSrc);
+  const avatarSrc = user?.avatar_url?.startsWith('http') ? user.avatar_url : `${MEDIA_BASE_URL}/media/${user?.avatar_url}`;
 
   return (
     <div className="flex flex-col">
@@ -362,7 +358,7 @@ function Avatar() {
                 }`}
               >
                 <img 
-                  src={avatar.path.startsWith('http') ? avatar.path : `http://localhost:8080/media/${avatar.path}`}
+                  src={avatar.path.startsWith('http') ? avatar.path : `${MEDIA_BASE_URL}/media/${avatar.path}`}
                   alt={avatar.label}
                   className="w-full h-20 object-cover rounded"
                 />

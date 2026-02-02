@@ -10,4 +10,4 @@ def create_player_stats(sender, instance, created, **kwargs):
     Signal handler to create PlayerStats when a new user is created
     """
     if created:
-        PlayerStats.objects.create(user=instance)
+        PlayerStats.objects.get_or_create(user=instance)
