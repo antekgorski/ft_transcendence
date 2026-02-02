@@ -104,7 +104,6 @@ def register(request):
         elif 'email' in error_message:
             return Response(
                 {
-                    "avatar_url": user.avatar_url,
                     "error": "Email already exists.",
                     "error_pl": "Email już istnieje."
                 },
