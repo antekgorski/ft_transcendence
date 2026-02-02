@@ -90,7 +90,10 @@ function DisplayNameEditor() {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/profile/update/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
         credentials: 'include',
         body: JSON.stringify({ display_name: displayName.trim() })
       });
