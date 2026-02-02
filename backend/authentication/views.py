@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from .models import User
 # (42 OAuth)
 from django.conf import settings
@@ -68,7 +69,12 @@ def register(request):
             display_name=username,
         )
         user.set_password(password)  # Hash and set the password BEFORE saving
+        user.assign_random_default_avatar()  # Assign random default avatar URL
         user.save()  # Now save with the password included
+
+        # Create session for the new user (auto-login)
+        request.session['user_id'] = str(user.id)
+        request.session.modified = True
 
         return Response(
             {
@@ -79,6 +85,7 @@ def register(request):
                     "username": user.username,
                     "email": user.email,
                     "display_name": user.display_name,
+                       "avatar_url": user.avatar_url,
                     "created_at": user.created_at.isoformat()
                 }
             },
@@ -98,6 +105,7 @@ def register(request):
         elif 'email' in error_message:
             return Response(
                 {
+                    "avatar_url": user.avatar_url,
                     "error": "Email already exists.",
                     "error_pl": "Email już istnieje."
                 },
@@ -201,6 +209,7 @@ def login(request):
     )
 
 
+@ensure_csrf_cookie
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_current_user(request):
@@ -258,6 +267,75 @@ def logout(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def set_avatar(request):
+    """
+    Set user's avatar to one of the default avatars (1-4) or to their Intra photo (for OAuth users).
+    Expects JSON: {"avatar": 1} or {"avatar": "intra"} for OAuth users
+    """
+    try:
+        user = User.objects.get(id=request.session.get('user_id'))
+        avatar = request.data.get('avatar')
+        
+        if avatar == 'intra':
+            # Only OAuth users can use their Intra photo
+            if user.oauth_provider != '42' or not user.oauth_id or not user.original_avatar_url:
+                return Response(
+                    {
+                        "error": "Only 42 OAuth users can use their Intra photo.",
+                        "error_pl": "Tylko użytkownicy 42 OAuth mogą używać swoich zdjęć z Intra."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Switch to Intra photo
+            user.avatar_url = user.original_avatar_url
+            user.save(update_fields=['avatar_url'])
+            
+            return Response(
+                {
+                    "message": "Avatar changed to Intra photo.",
+                    "message_pl": "Avatar zmieniony na zdjęcie z Intra.",
+                    "avatar_url": user.avatar_url
+                },
+                status=status.HTTP_200_OK
+            )
+        
+        elif isinstance(avatar, int) and 1 <= avatar <= 4:
+            # Set to default avatar
+            user.avatar_url = user.get_default_avatar_url(avatar)
+            user.save(update_fields=['avatar_url'])
+            
+            return Response(
+                {
+                    "message": "Avatar changed successfully.",
+                    "message_pl": "Avatar zmieniony pomyślnie.",
+                    "avatar_url": user.avatar_url
+                },
+                status=status.HTTP_200_OK
+            )
+        else:
+            return Response(
+                {
+                    "error": "Invalid avatar. Choose 1-4 for default avatars or 'intra' for Intra photo.",
+                    "error_pl": "Nieprawidłowy avatar. Wybierz 1-4 dla domyślnych avatarów lub 'intra' dla zdjęcia z Intra."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    except User.DoesNotExist:
+        return Response(
+            {
+                "error": "User not found.",
+                "error_pl": "Użytkownik nie znaleziony."
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
 # 42 OAuth Login View
 
 @api_view(['GET'])
@@ -353,7 +431,8 @@ def oauth_42_callback(request):
             username=username,
             email=email,
             display_name=f"{first_name} {last_name}".strip() or username,
-            avatar_url=avatar_url,
+            avatar_url=avatar_url,  # Store the 42 Intra photo URL directly
+            original_avatar_url=avatar_url,  # Keep original Intra URL
             oauth_provider="42",
             oauth_id=oauth_id,
             is_active=True,

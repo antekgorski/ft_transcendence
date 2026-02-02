@@ -1,7 +1,9 @@
 import uuid
+import random
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.hashers import make_password, check_password
+from django.conf import settings
 
 
 class UserManager(BaseUserManager):
@@ -33,12 +35,21 @@ class User(AbstractBaseUser):
     """
     User model based on DatabaseDesign.md specification.
     """
+    # Default avatar choices - relative paths in media folder
+    AVATAR_CHOICES = [
+        'avatars/avatar_1.jpg',
+        'avatars/avatar_2.jpg',
+        'avatars/avatar_3.jpg',
+        'avatars/avatar_4.jpg',
+    ]
+    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=150, unique=True)
     email = models.EmailField(unique=True)
     password = models.CharField(max_length=255, db_column='password_hash')
     display_name = models.CharField(max_length=150, blank=True, null=True)
     avatar_url = models.URLField(max_length=500, blank=True, null=True)
+    original_avatar_url = models.URLField(max_length=500, blank=True, null=True)  # Stores Intra URL for OAuth users
     language = models.CharField(max_length=10, default='en')
     oauth_provider = models.CharField(max_length=50, blank=True, null=True)
     oauth_id = models.CharField(max_length=255, blank=True, null=True)
@@ -72,6 +83,17 @@ class User(AbstractBaseUser):
     def check_password(self, raw_password):
         """Check if password matches the stored hash"""
         return check_password(raw_password, self.password)
+    
+    def assign_random_default_avatar(self):
+        """Assign a random default avatar URL to the user"""
+        default_avatar = random.choice(self.AVATAR_CHOICES)
+        self.avatar_url = default_avatar
+    
+    def get_default_avatar_url(self, avatar_index):
+        """Get the URL for a specific default avatar (1-4)"""
+        if 1 <= avatar_index <= 4:
+            return f"avatars/avatar_{avatar_index}.jpg"
+        return None
     
     @property
     def is_authenticated(self):

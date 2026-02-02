@@ -2,6 +2,22 @@ import React, { useState, useEffect, useContext } from 'react';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 
+// Helper to get CSRF token from cookie
+function getCsrfToken() {
+  const name = 'csrftoken';
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
 
 
 
@@ -35,7 +51,7 @@ function LogoutButton() {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE_URL}/api/auth/logout/`, {
+      await fetch(`${API_BASE_URL}/auth/logout/`, {
         method: 'POST',
         credentials: 'include',
       });
@@ -68,7 +84,7 @@ function PlayerStats() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/stats/me/`, {
+        const response = await fetch(`${API_BASE_URL}/stats/me/`, {
           credentials: 'include',
         });
         if (response.ok) {
@@ -130,23 +146,66 @@ function LogoHorizontal() {
 }
 
 function Avatar() {
-  const [selectedAvatar, setSelectedAvatar] = useState('player-avatar.jpg');
+  const { user, checkAuth } = useContext(AuthContext);
   const [showAvatarSelector, setShowAvatarSelector] = useState(false);
   
   const availableAvatars = [
-    'player-avatar.jpg',
-    'avatar-2.jpg',
-    'avatar-3.jpg',
-    'avatar-4.jpg'
+    { id: 1, label: 'Avatar 1', path: 'avatars/avatar_1.jpg' },
+    { id: 2, label: 'Avatar 2', path: 'avatars/avatar_2.jpg' },
+    { id: 3, label: 'Avatar 3', path: 'avatars/avatar_3.jpg' },
+    { id: 4, label: 'Avatar 4', path: 'avatars/avatar_4.jpg' },
   ];
+
+  // Add Intra photo option if user has original_avatar_url
+  if (user?.original_avatar_url) {
+    availableAvatars.push({
+      id: 'intra',
+      label: '42 Intra Photo',
+      path: user.original_avatar_url
+    });
+  }
+
+  const handleAvatarChange = async (avatarId) => {
+    try {
+      const csrfToken = getCsrfToken();
+      console.log('CSRF Token:', csrfToken);
+      console.log('Changing avatar to:', avatarId);
+      const response = await fetch(`${API_BASE_URL}/auth/avatar/set/`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify({ avatar: avatarId })
+      });
+      console.log('Response status:', response.status);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Avatar changed:', data);
+        await checkAuth(); // Refresh user data
+        setShowAvatarSelector(false);
+      } else {
+        const errorData = await response.json();
+        console.error('Avatar change failed:', errorData);
+      }
+    } catch (err) {
+      console.error('Failed to update avatar:', err);
+    }
+  };
+
+  const avatarSrc = user?.avatar_url?.startsWith('http') ? user.avatar_url : `http://localhost:8080/media/${user?.avatar_url}`;
+  console.log('Avatar URL from user:', user?.avatar_url);
+  console.log('Final avatar src:', avatarSrc);
 
   return (
     <div className="flex flex-col">
       <div className="relative">
         <img 
-          src={`${API_BASE_URL}/media/${selectedAvatar}`} 
+          src={avatarSrc}
           alt="PlayerAvatar" 
           className="w-full h-80 object-cover rounded-lg shadow-lg"
+          onError={(e) => console.error('Image load error:', e.target.src)}
         />
         <button
           onClick={() => setShowAvatarSelector(!showAvatarSelector)}
@@ -162,23 +221,20 @@ function Avatar() {
           <div className="grid grid-cols-2 gap-3">
             {availableAvatars.map((avatar) => (
               <button
-                key={avatar}
-                onClick={() => {
-                  setSelectedAvatar(avatar);
-                  setShowAvatarSelector(false);
-                }}
+                key={avatar.id}
+                onClick={() => handleAvatarChange(avatar.id)}
                 className={`p-2 rounded-lg transition-all ${
-                  selectedAvatar === avatar 
+                  user?.avatar_url === avatar.path || (avatar.id === 'intra' && user?.avatar_url === user?.original_avatar_url)
                     ? 'border-2 border-emerald-500' 
                     : 'border-2 border-slate-600 hover:border-emerald-400'
                 }`}
               >
                 <img 
-                  src={`${API_BASE_URL}/media/${avatar}`} 
-                  alt={avatar}
+                  src={avatar.path.startsWith('http') ? avatar.path : `http://localhost:8080/media/${avatar.path}`}
+                  alt={avatar.label}
                   className="w-full h-20 object-cover rounded"
                 />
-                <p className="text-sm text-gray-300 mt-1 text-center truncate">{avatar}</p>
+                <p className="text-sm text-gray-300 mt-1 text-center truncate">{avatar.label}</p>
               </button>
             ))}
           </div>
