@@ -16,5 +16,8 @@ class SessionAuthentication(authentication.BaseAuthentication):
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
             raise exceptions.AuthenticationFailed('User not found')
+
+        if not getattr(user, "is_active", True):
+            raise exceptions.AuthenticationFailed('User account is disabled')
         
         return (user, None)
