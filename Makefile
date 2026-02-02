@@ -28,6 +28,15 @@ restart_backend:
 restart_redis:
 	$(DOCKER_COMPOSE) restart redis
 
+rebuild_frontend:
+	$(DOCKER_COMPOSE) up -d --build frontend
+
+rebuild_backend:
+	$(DOCKER_COMPOSE) up -d --build backend
+
+rebuild_redis:
+	$(DOCKER_COMPOSE) up -d --build redis
+
 logs:
 	$(DOCKER_COMPOSE) logs -f
 

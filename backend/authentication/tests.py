@@ -270,7 +270,7 @@ class UserModelTests(TestCase):
         user.set_password('SecurePass123!')
         
         # Check password is hashed
-        self.assertNotEqual(user.password_hash, 'SecurePass123!')
+        self.assertNotEqual(user.password, 'SecurePass123!')
         self.assertTrue(user.has_usable_password())
     
     def test_user_check_password_correct(self):

@@ -13,9 +13,8 @@ RUN npm install && \
 # Copy configuration files
 COPY tailwind.config.js postcss.config.js ./
 
-# Copy application source code
-COPY src ./src
-COPY public ./public
+# Copy entire directory
+COPY . .
 
 EXPOSE 3000
 

@@ -7,6 +7,7 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     container_name: ft_transcendence_nginx
+    restart: always
     ports:
       - "8080:80"
     depends_on:
@@ -22,6 +23,7 @@ services:
       context: ./redis
       dockerfile: Dockerfile
     container_name: ft_transcendence_redis
+    restart: always
     env_file:
       - .env
     environment:
@@ -37,6 +39,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ft_transcendence_backend
+    restart: always
     env_file:
       - .env
     environment:
@@ -50,6 +53,8 @@ services:
       DB_PORT: ${DB_PORT}
       DB_SSLMODE: ${DB_SSLMODE}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
     expose:
       - "8000"
     volumes:
@@ -58,7 +63,7 @@ services:
       - redis
     networks:
       - transcendence_network
-    command: daphne -b ${BACKEND_HOST} -p ${BACKEND_PORT} project_config.asgi:application
+    command: daphne -b 0.0.0.0 -p 8000 project_config.asgi:application
 
   # Frontend (React Dev Server with Hot Reload)
   frontend:
@@ -66,6 +71,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: ft_transcendence_frontend
+    restart: always
     env_file:
       - .env
     environment:

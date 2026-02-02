@@ -52,7 +52,6 @@ class User(AbstractBaseUser):
     objects = UserManager()
     
     USERNAME_FIELD = 'username'
-    PASSWORD_FIELD = 'password'
     REQUIRED_FIELDS = ['email']
 
     class Meta:

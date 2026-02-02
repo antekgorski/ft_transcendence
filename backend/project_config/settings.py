@@ -10,7 +10,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 if not SECRET_KEY:
     raise ValueError('SECRET_KEY environment variable must be set')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',') if os.environ.get('ALLOWED_HOSTS') else []
 
 INSTALLED_APPS = [
     'daphne',
@@ -119,7 +119,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # CORS
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if os.environ.get('CORS_ALLOWED_ORIGINS') else []
 CORS_ALLOW_CREDENTIALS = True
 
 # Session Configuration
@@ -131,7 +131,7 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False
-CSRF_TRUSTED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+CSRF_TRUSTED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if os.environ.get('CORS_ALLOWED_ORIGINS') else []
 
 # REST Framework
 REST_FRAMEWORK = {
@@ -154,6 +154,8 @@ REST_FRAMEWORK = {
 FORTY_TWO_CLIENT_ID = os.getenv('FORTY_TWO_CLIENT_ID')
 FORTY_TWO_CLIENT_SECRET = os.getenv('FORTY_TWO_CLIENT_SECRET')
 FORTY_TWO_REDIRECT_URI = os.getenv('FORTY_TWO_REDIRECT_URI')
+if not FORTY_TWO_REDIRECT_URI:
+    raise ValueError('FORTY_TWO_REDIRECT_URI environment variable must be set')
 
 # Custom User Model
 AUTH_USER_MODEL = 'authentication.User'

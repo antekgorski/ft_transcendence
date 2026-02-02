@@ -9,10 +9,12 @@ from django.db.models import Q
 from django.utils import timezone
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
+from django.http import HttpResponse
 from .models import User
 # (42 OAuth)
 from django.conf import settings
 import requests
+import json
 from django.shortcuts import redirect
 
 @api_view(['POST'])
@@ -361,20 +363,11 @@ def oauth_42_callback(request):
     user.last_login = timezone.now()
     user.save(update_fields=["last_login"])
 
-    # Prepare user data
-    user_data = {
-        "id": str(user.id),
-        "username": user.username,
-        "email": user.email,
-        "display_name": user.display_name,
-        "avatar_url": user.avatar_url,
-        "oauth_provider": user.oauth_provider,
-        "created_at": user.created_at.isoformat(),
-        "last_login": user.last_login.isoformat() if user.last_login else None,
-    }
+    # Create secure session (httpOnly cookie will be set automatically by Django)
+    request.session['user_id'] = str(user.id)
+    request.session.modified = True
     
-    # Return HTML page that stores user data and redirects to frontend
-    import json
+    # Redirect to frontend root - will use the same domain/origin from the browser
     html_response = f"""
     <!DOCTYPE html>
     <html>
@@ -383,14 +376,11 @@ def oauth_42_callback(request):
     </head>
     <body>
         <script>
-            // Store user data in localStorage
-            const user = {json.dumps(user_data)};
-            localStorage.setItem('user', JSON.stringify(user));
-            // Redirect to home page
+            // Session established via httpOnly cookie
+            // Redirect to root of same origin - frontend will verify user via /me/ endpoint
             window.location.href = '/';
         </script>
     </body>
     </html>
     """
-    from django.http import HttpResponse
     return HttpResponse(html_response, content_type='text/html')
