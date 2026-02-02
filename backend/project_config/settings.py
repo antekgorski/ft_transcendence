@@ -48,6 +48,8 @@ ASGI_APPLICATION = 'project_config.asgi.application'
 
 # Redis Configuration
 REDIS_URL = os.environ.get('REDIS_URL')
+if not REDIS_URL:
+    raise ValueError('REDIS_URL environment variable must be set')
 ROOT_URLCONF = 'project_config.urls'
 
 TEMPLATES = [
