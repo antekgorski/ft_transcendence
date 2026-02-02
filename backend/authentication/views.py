@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie
 from .models import User
 # (42 OAuth)
 from django.conf import settings
