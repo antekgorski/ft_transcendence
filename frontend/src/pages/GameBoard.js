@@ -1,5 +1,6 @@
 // Importujemy React i hook useState do zarządzania stanem komponentu.
 import React, { useState } from 'react';
+import { Templete } from './Components';
 
 // Deklarujemy stałą z rozmiarem planszy (10x10).
 const BOARD_SIZE = 10;
@@ -28,8 +29,8 @@ const createEmptyBoard = () => {
   });
 };
 
-// Główny komponent GameBoard.
-function GameBoard() {
+// Główny komponent GameBoard z logiką gry przeniesiony do Body.
+function Body({ onNavigate }) {
   // Stan planszy gracza (własne statki).
   const [playerBoard, setPlayerBoard] = useState(createEmptyBoard);
   // Stan planszy przeciwnika (gdzie oddajemy strzały).
@@ -163,10 +164,20 @@ function GameBoard() {
     return `${base} bg-slate-800`;
   };
 
-  // Render komponentu.
+  // Render komponentu Body.
   return (
     // Główny kontener strony.
-    <div className="min-h-screen bg-slate-900 text-white p-6">
+    <div className="text-white">
+      {/* Przycisk powrotu do menu */}
+      <div className="mb-4">
+        <button
+          onClick={() => onNavigate('router')}
+          className="px-4 py-2 bg-slate-600 hover:bg-slate-700 rounded-md font-semibold transition-colors"
+        >
+          ← Back to Menu
+        </button>
+      </div>
+
       {/* Tytuł strony */}
       <h1 className="text-3xl font-bold text-center mb-6">Battleship — Game Board</h1>
 
@@ -255,6 +266,15 @@ function GameBoard() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Główny komponent GameBoard.
+function GameBoard({ onNavigate }) {
+  return (
+    <Templete>
+      <Body onNavigate={onNavigate} />
+    </Templete>
   );
 }
 
