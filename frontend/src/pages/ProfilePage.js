@@ -335,7 +335,6 @@ function Avatar() {
           src={avatarSrc}
           alt="PlayerAvatar" 
           className="w-full h-80 object-cover rounded-lg shadow-lg"
-          onError={(e) => console.error('Image load error:', e.target.src)}
         />
         <button
           onClick={() => setShowAvatarSelector(!showAvatarSelector)}
