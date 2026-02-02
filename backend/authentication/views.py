@@ -15,7 +15,6 @@ from .models import User
 # (42 OAuth)
 from django.conf import settings
 import requests
-import json
 from django.shortcuts import redirect
 
 @api_view(['POST'])
