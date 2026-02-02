@@ -275,7 +275,7 @@ def set_avatar(request):
     Expects JSON: {"avatar": 1} or {"avatar": "intra"} for OAuth users
     """
     try:
-        user = User.objects.get(id=request.session.get('user_id'))
+        user = request.user
         avatar = request.data.get('avatar')
         
         if avatar == 'intra':
