@@ -47,30 +47,31 @@ The application is built as a microservices-based Single Page Application
 2. Create environment file:
    ```bash
    cp .env.example .env
-   # Edit .env with your database credentials
+   # Edit .env with your credentials and variables
    ```
 
-3. Start the application:
+3. Compile the application:
    ```bash
-   # CRITICAL: Always stop old containers before starting
-   docker-compose down
-   
-   # First run (builds containers in detached mode)
-   docker-compose up --build -d
+   # Compile
+   make
 
-   # Subsequent runs (always stop first, then start with -d)
-   docker-compose down
-   docker-compose up -d
+   # Restart containers
+   make restart
+
+   # Restart frontend
+   make restart_frontend
+
+   # Restart backend
+   make restart_backend
+
+   # Restart redis
+   make restart_redis
+
+   # Rebuild
+   make re
    ```
-   
-   **Important Notes:**
-   - Always run `docker-compose down` before starting to clean up old containers
-   - Always use `-d` flag to run containers in detached mode (without it, containers stop when terminal commands run)
-   - Run migrations after updating models: `docker-compose exec backend python manage.py migrate`
 
-   **Note**: Always use the `-d` flag to run containers in detached mode. Without it, containers will stop when running terminal commands.
-
-4. Access the app at `http://localhost`
+4. Access your app via browser under URL and port defined in .env file
 
 ---
 

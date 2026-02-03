@@ -7,14 +7,12 @@ function AppContent() {
   const { user, setUser, checkAuth } = useContext(AuthContext);
 
   const handleLogin = (userData) => {
-    // Dane użytkownika już przyszły z backendu (przez WelcomePage)
-    // Zapisz do localStorage i ustaw w kontekście
-    localStorage.setItem('user', JSON.stringify(userData));
+    // User data comes from backend - update context and recheck auth
     setUser(userData);
+    checkAuth();
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('user');
     setUser(null);
   };
 
@@ -23,9 +21,10 @@ function AppContent() {
   }
 
   return (
-    <>
-      <GameBoard userData={user} onLogout={handleLogout} />
-    </>
+    // <>
+    //   <GameBoard userData={user} onLogout={handleLogout} />
+    // </>
+    <ProfilePage userData={user} onLogout={handleLogout} />
   );
 }
 

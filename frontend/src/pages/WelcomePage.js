@@ -57,11 +57,9 @@ function WelcomePage({ onLogin }) {
         const data = await response.json();
 
         if (response.ok) {
-          // Save user data to localStorage after registration
-          localStorage.setItem('user', JSON.stringify(data.user));
           setSuccess('Registration successful! Logging you in...');
           
-          // Auto-login after successful registration
+          // Session created by backend - just notify parent to refresh auth
           setTimeout(() => {
             if (onLogin) {
               onLogin(data.user);

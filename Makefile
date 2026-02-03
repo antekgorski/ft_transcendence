@@ -1,28 +1,52 @@
 # Makefile for ft_transcendence
 
-.PHONY: all build up down restart logs clean re admin
+# Detect docker compose command (docker-compose or docker compose)
+DOCKER_COMPOSE := $(shell command -v docker-compose 2> /dev/null)
+ifndef DOCKER_COMPOSE
+	DOCKER_COMPOSE := docker compose
+endif
 
 all: build up
 
 build:
-	docker compose build
+	$(DOCKER_COMPOSE) build
 
 up:
-	docker compose up -d
+	$(DOCKER_COMPOSE) up -d
 
 down:
-	docker compose down
+	$(DOCKER_COMPOSE) down
 
 restart: down up
 
+restart_frontend:
+	$(DOCKER_COMPOSE) restart frontend
+
+restart_backend:
+	$(DOCKER_COMPOSE) restart backend
+
+restart_redis:
+	$(DOCKER_COMPOSE) restart redis
+
+rebuild_frontend:
+	$(DOCKER_COMPOSE) up -d --build frontend
+
+rebuild_backend:
+	$(DOCKER_COMPOSE) up -d --build backend
+
+rebuild_redis:
+	$(DOCKER_COMPOSE) up -d --build redis
+
 logs:
-	docker compose logs -f
+	$(DOCKER_COMPOSE) logs -f
 
 clean:
-	docker compose down -v
+	$(DOCKER_COMPOSE) down -v
 	docker system prune -f
 
 re: clean build up
 
 admin:
-	docker compose exec backend python manage.py createsuperuser
+	$(DOCKER_COMPOSE) exec backend python manage.py createsuperuser
+
+.PHONY: all build up down restart restart_frontend restart_backend restart_redis logs clean re admin

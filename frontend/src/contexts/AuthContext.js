@@ -10,10 +10,13 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     try {
-      // Zapytanie do endpointu, który sprawdza sesję (np. /api/auth/me)
-      const res = await axios.get(`${API_BASE_URL}/api/auth/me/`, { withCredentials: true });
-      setUser(res.data); // Ustawiamy dane użytkownika (np. {id: 1, username: 'Jan'})
+      // Verify authentication via backend - this validates the session cookie
+      const res = await axios.get(`${API_BASE_URL}/auth/me/`, { 
+        withCredentials: true 
+      });
+      setUser(res.data);
     } catch (err) {
+      // Not authenticated or session invalid
       setUser(null);
     } finally {
       setLoading(false);
@@ -21,7 +24,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    checkAuth(); // Sprawdź przy starcie aplikacji
+    checkAuth(); // Check auth on app mount
   }, []);
 
   return (
