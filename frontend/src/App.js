@@ -1,17 +1,22 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import WelcomePage from './pages/WelcomePage';
 import ProfilePage from './pages/ProfilePage';
 import GameBoard from './pages/GameBoard';
-import RuterPage from './pages/RuterPage';
+import RouterPage from './pages/RouterPage';
 import { AuthProvider, AuthContext } from './contexts/AuthContext';
 
 function AppContent() {
   const { user, setUser, checkAuth } = useContext(AuthContext);
-  const [currentPage, setCurrentPage] = useState(() => {
-    if (!user) return 'router';
+  const [currentPage, setCurrentPage] = useState('welcome');
+
+  useEffect(() => {
+    if (!user) {
+      setCurrentPage('welcome');
+      return;
+    }
     const saved = localStorage.getItem('lastPage');
-    return saved && (saved === 'game' || saved === 'profile') ? saved : 'router';
-  });
+    setCurrentPage(saved && (saved === 'game' || saved === 'profile') ? saved : 'router');
+  }, [user]);
 
   const handleLogin = (userData) => {
     // User data comes from backend - update context and recheck auth
@@ -28,7 +33,7 @@ function AppContent() {
 
   const handleLogout = () => {
     setUser(null);
-    setCurrentPage('router');
+    setCurrentPage('welcome');
     localStorage.removeItem('lastPage');
   };
 
@@ -40,6 +45,10 @@ function AppContent() {
       localStorage.removeItem('lastPage');
     }
   };
+
+  if (currentPage === 'welcome') {
+    return <WelcomePage onLogin={handleLogin} />;
+  }
 
   if (!user) {
     return <WelcomePage onLogin={handleLogin} />;
@@ -53,7 +62,7 @@ function AppContent() {
     return <ProfilePage userData={user} onLogout={handleLogout} onNavigate={handleNavigate} />;
   }
 
-  return <RuterPage onNavigate={handleNavigate} />;
+  return <RouterPage onNavigate={handleNavigate} />;
 }
 
 function App() {

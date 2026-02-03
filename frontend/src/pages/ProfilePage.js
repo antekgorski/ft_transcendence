@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
-import { Templete } from './Components';
+import { Template } from './Components';
 
 const MEDIA_BASE_URL = process.env.REACT_APP_MEDIA_URL || API_BASE_URL.replace(/\/api\/?$/, '');
 
@@ -203,6 +203,7 @@ function PlayerStats() {
 function Avatar() {
   const { user, checkAuth } = useContext(AuthContext);
   const [showAvatarSelector, setShowAvatarSelector] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
   
   const availableAvatars = [
     { id: 1, label: 'Avatar 1', path: 'avatars/avatar_1.jpg' },
@@ -222,6 +223,7 @@ function Avatar() {
 
   const handleAvatarChange = async (avatarId) => {
     try {
+      setAvatarError('');
       const csrfToken = getCsrfToken();
       const response = await fetch(`${API_BASE_URL}/auth/avatar/set/`, {
         method: 'POST',
@@ -238,9 +240,12 @@ function Avatar() {
         setShowAvatarSelector(false);
       } else {
         const errorData = await response.json();
+        const message = errorData?.error || 'Failed to update avatar';
+        setAvatarError(message);
         console.error('Avatar change failed:', errorData);
       }
     } catch (err) {
+      setAvatarError('Failed to update avatar');
       console.error('Failed to update avatar:', err);
     }
   };
@@ -266,6 +271,7 @@ function Avatar() {
       {showAvatarSelector && (
         <div className="mt-4 bg-slate-800/50 backdrop-blur-sm rounded-lg p-4 border border-slate-700">
           <h3 className="text-white font-bold mb-3">Select Avatar</h3>
+          {avatarError && <p className="text-red-400 text-sm mb-3">{avatarError}</p>}
           <div className="grid grid-cols-2 gap-3">
             {availableAvatars.map((avatar) => (
               <button
@@ -316,9 +322,9 @@ function Body({ onNavigate }) {
 
 function ProfilePage({ onNavigate }) {
   return (
-    <Templete>
+    <Template>
       <Body onNavigate={onNavigate} />
-    </Templete>
+    </Template>
   );
 }
 

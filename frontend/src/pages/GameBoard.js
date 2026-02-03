@@ -1,6 +1,6 @@
 // Importujemy React i hook useState do zarządzania stanem komponentu.
 import React, { useState } from 'react';
-import { Templete } from './Components';
+import { Template } from './Components';
 
 // Deklarujemy stałą z rozmiarem planszy (10x10).
 const BOARD_SIZE = 10;
@@ -272,9 +272,9 @@ function Body({ onNavigate }) {
 // Główny komponent GameBoard.
 function GameBoard({ onNavigate }) {
   return (
-    <Templete>
+    <Template>
       <Body onNavigate={onNavigate} />
-    </Templete>
+    </Template>
   );
 }
 

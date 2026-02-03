@@ -1,12 +1,5 @@
-import React, { useState, useEffect, useContext } from 'react';
-import API_BASE_URL from '../config';
-import { AuthContext } from '../contexts/AuthContext';
+import React from 'react';
 import { Templete } from './Components';
-
-const MEDIA_BASE_URL = process.env.REACT_APP_MEDIA_URL || API_BASE_URL.replace(/\/api\/?$/, '');
-
-
-
 
 function Body({ onNavigate }) {
   return (
@@ -30,12 +23,12 @@ function Body({ onNavigate }) {
   );
 }
 
-function RuterPage({ onNavigate }) {
+function RouterPage({ onNavigate }) {
   return (
-    <Templete>
+    <Template>
       <Body onNavigate={onNavigate} />
-    </Templete>
+    </Template>
   );
 }
 
-export default RuterPage;
+export default RouterPage;

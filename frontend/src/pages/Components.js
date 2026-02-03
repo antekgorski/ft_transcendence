@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useContext } from 'react';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 
 
-function Templete({ children }) {
+function Template({ children }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900">
       {/* Pasek na górze */}
@@ -84,5 +84,4 @@ function LogoHorizontal() {
 }
 
 
-// export default ProfilePage;
-export { Templete };
+export { Template };
