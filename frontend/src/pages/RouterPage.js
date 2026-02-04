@@ -1,5 +1,5 @@
 import React from 'react';
-import { Templete } from './Components';
+import { Template } from './Components';
 
 function Body({ onNavigate }) {
   return (
