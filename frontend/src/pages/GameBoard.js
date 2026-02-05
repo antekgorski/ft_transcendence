@@ -81,7 +81,6 @@ function Body() {
   const remainingShips = allShips.filter((size, index) => {
     // Sprawdzamy ile statków danego rozmiaru już umieściliśmy
     const placedCount = placedShips.filter(s => s.size === size).length;
-    const totalCount = allShips.filter(s => s === size).length;
     // Zliczamy ile razy ten rozmiar występuje przed tym indeksem
     const beforeIndex = allShips.slice(0, index).filter(s => s === size).length;
     return beforeIndex >= placedCount;
