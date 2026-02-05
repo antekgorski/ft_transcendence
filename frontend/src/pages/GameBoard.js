@@ -484,6 +484,27 @@ function Body() {
     setDidDrop(false);
   };
 
+  // Przy odmontowaniu komponentu przywracamy stan planszy,
+  // jeśli trwało przeciąganie i nie zakończyło się poprawnym upuszczeniem.
+  useEffect(() => {
+    return () => {
+      if (dragRestore && !didDrop) {
+        setPlayerBoard(dragRestore.board);
+        setPlacedShips(dragRestore.ships);
+        if (gameId) {
+          localStorage.setItem(`game_${gameId}_ships`, JSON.stringify({
+            board: dragRestore.board,
+            ships: dragRestore.ships
+          }));
+        }
+      }
+      // Wyczyść stan przeciągania przy odmontowaniu.
+      setDragRestore(null);
+      setDraggedShip(null);
+      setHoverCell(null);
+      setDidDrop(false);
+    };
+  }, [dragRestore, didDrop, gameId]);
   const handleDragOver = (e, row, col) => {
     e.preventDefault();
     if (!isPlacingShips || !draggedShip) return;
