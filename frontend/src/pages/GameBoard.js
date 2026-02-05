@@ -144,10 +144,10 @@ function Body() {
   // Tworzymy grę AI przy montowaniu komponentu
   useEffect(() => {
     const initializeGame = async () => {
-            // Zapobiegaj wielokrotnemu wywoływaniu
-            if (gameInitialized || initializingRef.current) {
-      return;
-            }
+      // Zapobiegaj wielokrotnemu wywoływaniu
+      if (gameInitialized || initializingRef.current) {
+        return;
+      }
       
       try {
         initializingRef.current = true;
