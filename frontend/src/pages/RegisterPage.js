@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import API_BASE_URL from '../config';
+import api from '../utils/api';
+import { AuthContext } from '../contexts/AuthContext';
 
 function RegisterPage() {
   const navigate = useNavigate();
+  const { checkAuth } = useContext(AuthContext);
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -40,33 +43,26 @@ function RegisterPage() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/register/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: formData.username,
-          email: formData.email,
-          password: formData.password,
-        }),
+      const response = await api.post('/auth/register/', {
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        setSuccess('Registration successful! Redirecting to login...');
+      if (response.status === 201) {
+        setSuccess('Registration successful! Logging you in...');
         
-        // Redirect to login page after showing success message,
-        // passing the username so it can be pre-filled.
-        setTimeout(() => {
-          navigate(`/?username=${encodeURIComponent(formData.username)}`);
-        }, 2000);
-      } else {
-        setError(data.error || data.error_pl || 'Registration failed');
+        // Verify the session was created and load user data
+        setTimeout(async () => {
+          await checkAuth();
+          navigate('/menu');
+        }, 1000);
       }
     } catch (err) {
-      setError('Network error. Please try again.');
+      const errorMsg = err.response?.data?.error || 
+                       err.response?.data?.error_pl || 
+                       'Registration failed';
+      setError(errorMsg);
       console.error('Registration error:', err);
     } finally {
       setLoading(false);

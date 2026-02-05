@@ -11,15 +11,17 @@ class AIOpponent:
     - Random initial shots
     - Smart hunting after hits (checks adjacent cells)
     - No advanced heuristics or AI learning
+    
+    Ship configuration: 1x4, 2x3, 3x2, 4x1 (total 10 ships = 20 cells)
     """
     
-    # Ship types and their sizes
-    SHIPS = {
-        'battleship': 4,
-        'cruiser': 3,
-        'destroyer': 2,
-        'submarine': 1,
-    }
+    # Ship types and their sizes with counts
+    SHIPS = [
+        {'name': 'battleship', 'size': 4, 'count': 1},
+        {'name': 'cruiser', 'size': 3, 'count': 2},
+        {'name': 'destroyer', 'size': 2, 'count': 3},
+        {'name': 'submarine', 'size': 1, 'count': 4},
+    ]
     
     BOARD_SIZE = 10
     
@@ -43,17 +45,26 @@ class AIOpponent:
             'misses': [],
         }
         
-        # Place ships randomly
-        for ship_name, ship_size in self.SHIPS.items():
-            positions = self._find_valid_ship_placement(board, ship_size)
-            board['ships'][ship_name] = {
-                'size': ship_size,
-                'positions': positions,
-                'hits': 0,
-            }
-            # Mark positions on grid
-            for pos in positions:
-                board['grid'][pos['x']][pos['y']] = ship_name
+        # Place ships randomly (1x4, 2x3, 3x2, 4x1)
+        ship_id = 0
+        for ship_config in self.SHIPS:
+            ship_name = ship_config['name']
+            ship_size = ship_config['size']
+            count = ship_config['count']
+            
+            # Place multiple ships of the same type
+            for i in range(count):
+                unique_name = f"{ship_name}_{i+1}" if count > 1 else ship_name
+                positions = self._find_valid_ship_placement(board, ship_size)
+                board['ships'][unique_name] = {
+                    'size': ship_size,
+                    'positions': positions,
+                    'hits': 0,
+                }
+                # Mark positions on grid
+                for pos in positions:
+                    board['grid'][pos['x']][pos['y']] = unique_name
+                ship_id += 1
         
         return board
     

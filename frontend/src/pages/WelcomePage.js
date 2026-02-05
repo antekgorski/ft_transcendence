@@ -2,6 +2,7 @@ import React, { useState, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
+import api from '../utils/api';
 
 function WelcomePage() {
   const navigate = useNavigate();
@@ -36,30 +37,24 @@ function WelcomePage() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          identifier: formData.username,
-          password: formData.password,
-        }),
+      const response = await api.post('/auth/login/', {
+        identifier: formData.username,
+        password: formData.password,
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
+      if (response.status === 200) {
+        const data = response.data;
         localStorage.setItem('user', JSON.stringify(data.user));
         setSuccess('Login successful!');
         
-        checkAuth();
+        await checkAuth();
         navigate('/');
-      } else {
-        setError(data.error || data.error_pl || 'Login failed');
       }
     } catch (err) {
-      setError('Network error. Please try again.');
+      const errorMsg = err.response?.data?.error || 
+                       err.response?.data?.error_pl || 
+                       'Login failed';
+      setError(errorMsg);
       console.error('Login error:', err);
     } finally {
       setLoading(false);

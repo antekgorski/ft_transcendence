@@ -3,25 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 import { Template } from './Components';
+import api from '../utils/api';
 
 const MEDIA_BASE_URL = process.env.REACT_APP_MEDIA_URL || API_BASE_URL.replace(/\/api\/?$/, '');
-
-// Helper to get CSRF token from cookie
-function getCsrfToken() {
-  const name = 'csrftoken';
-  let cookieValue = null;
-  if (document.cookie && document.cookie !== '') {
-    const cookies = document.cookie.split(';');
-    for (let i = 0; i < cookies.length; i++) {
-      const cookie = cookies[i].trim();
-      if (cookie.substring(0, name.length + 1) === (name + '=')) {
-        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-        break;
-      }
-    }
-  }
-  return cookieValue;
-}
 
 function DisplayNameEditor() {
   const { user, checkAuth } = useContext(AuthContext);
@@ -40,25 +24,14 @@ function DisplayNameEditor() {
     setError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/profile/update/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        credentials: 'include',
-        body: JSON.stringify({ display_name: displayName.trim() })
+      await api.post('/auth/profile/update/', { 
+        display_name: displayName.trim() 
       });
-
-      if (response.ok) {
-        await checkAuth();
-        setIsEditing(false);
-      } else {
-        const data = await response.json();
-        setError(data.error || 'Failed to update display name');
-      }
+      await checkAuth();
+      setIsEditing(false);
     } catch (err) {
-      setError('Failed to update display name');
+      const errorMsg = err.response?.data?.error || 'Failed to update display name';
+      setError(errorMsg);
       console.error('Error:', err);
     } finally {
       setIsSaving(false);
@@ -140,15 +113,8 @@ function PlayerStats() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/games/stats/me/`, {
-          credentials: 'include',
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data);
-        } else {
-          console.error('Failed to fetch stats, status:', response.status);
-        }
+        const response = await api.get('/games/stats/me/');
+        setStats(response.data);
       } catch (err) {
         console.error('Failed to fetch stats:', err);
       } finally {
@@ -225,28 +191,12 @@ function Avatar() {
   const handleAvatarChange = async (avatarId) => {
     try {
       setAvatarError('');
-      const csrfToken = getCsrfToken();
-      const response = await fetch(`${API_BASE_URL}/auth/avatar/set/`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken
-        },
-        credentials: 'include',
-        body: JSON.stringify({ avatar: avatarId })
-      });
-      if (response.ok) {
-        await response.json();
-        await checkAuth(); // Refresh user data
-        setShowAvatarSelector(false);
-      } else {
-        const errorData = await response.json();
-        const message = errorData?.error || 'Failed to update avatar';
-        setAvatarError(message);
-        console.error('Avatar change failed:', errorData);
-      }
+      await api.post('/auth/avatar/set/', { avatar: avatarId });
+      await checkAuth(); // Refresh user data
+      setShowAvatarSelector(false);
     } catch (err) {
-      setAvatarError('Failed to update avatar');
+      const errorMsg = err.response?.data?.error || 'Failed to update avatar';
+      setAvatarError(errorMsg);
       console.error('Failed to update avatar:', err);
     }
   };
@@ -299,6 +249,102 @@ function Avatar() {
   );
 }
 
+function GameHistory() {
+  const { user } = useContext(AuthContext);
+  const [games, setGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchGameHistory = async () => {
+      try {
+        setError('');
+        const response = await api.get('/games/game_history/');
+        setGames(response.data || []);
+      } catch (err) {
+        const errorMsg = err.response?.data?.error || 'Failed to fetch game history';
+        setError(errorMsg);
+        console.error('Failed to fetch game history:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user?.id) {
+      fetchGameHistory();
+    }
+  }, [user?.id]);
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatDuration = (seconds) => {
+    if (!seconds) return 'N/A';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  };
+
+  return (
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-slate-700">
+      <h2 className="text-2xl font-bold text-white mb-4">Game History</h2>
+      
+      {error && (
+        <p className="text-red-400 mb-4">{error}</p>
+      )}
+
+      {loading ? (
+        <p className="text-gray-400">Loading game history...</p>
+      ) : games.length === 0 ? (
+        <p className="text-gray-400">No games played yet</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-gray-300">
+            <thead>
+              <tr className="border-b border-slate-600">
+                <th className="text-left py-3 px-4 font-semibold text-emerald-400">Date</th>
+                <th className="text-left py-3 px-4 font-semibold text-emerald-400">Opponent</th>
+                <th className="text-left py-3 px-4 font-semibold text-emerald-400">Type</th>
+                <th className="text-left py-3 px-4 font-semibold text-emerald-400">Result</th>
+                <th className="text-left py-3 px-4 font-semibold text-emerald-400">Duration</th>
+                <th className="text-left py-3 px-4 font-semibold text-emerald-400">Accuracy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {games.map((game, index) => {
+                const accuracy = game.player_1_shots > 0 
+                  ? Math.round((game.player_1_hits / game.player_1_shots) * 100) 
+                  : 0;
+                const resultColor = game.result === 'win' ? 'text-emerald-400' : 'text-red-400';
+                const resultText = game.result === 'win' ? 'Win' : 'Loss';
+
+                return (
+                  <tr key={index} className="border-b border-slate-700 hover:bg-slate-700/30 transition-colors">
+                    <td className="py-3 px-4">{formatDate(game.ended_at)}</td>
+                    <td className="py-3 px-4">{game.opponent_username}</td>
+                    <td className="py-3 px-4">{game.game_type_display}</td>
+                    <td className={`py-3 px-4 font-semibold ${resultColor}`}>{resultText}</td>
+                    <td className="py-3 px-4">{formatDuration(game.duration_seconds)}</td>
+                    <td className="py-3 px-4">{accuracy}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Body() {
   const navigate = useNavigate();
   return (
@@ -318,6 +364,7 @@ function Body() {
         <PlayerStats />
         <Avatar />
       </div>
+      <GameHistory />
     </div>
   );
 }
