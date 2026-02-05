@@ -55,7 +55,7 @@ function RegisterPage() {
         // Verify the session was created and load user data
         setTimeout(async () => {
           await checkAuth();
-          navigate('/menu');
+          navigate('/');
         }, 1000);
       }
     } catch (err) {
