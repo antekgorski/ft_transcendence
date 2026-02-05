@@ -32,13 +32,35 @@ export function getCsrfToken() {
  * @returns {Promise<void>}
  */
 export async function fetchCsrfToken() {
+  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
+
   try {
-    const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://localhost:8080/api';
-    await fetch(`${API_BASE_URL}/auth/me/`, {
+    const response = await fetch(`${API_BASE_URL}/auth/me/`, {
       method: 'GET',
       credentials: 'include',
     });
+
+    // If the user is not authenticated, fall back to a public CSRF endpoint
+    if (response.status === 401 || response.status === 403) {
+      try {
+        await fetch(`${API_BASE_URL}/csrf/`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+      } catch (publicError) {
+        console.error('Failed to fetch CSRF token from public endpoint:', publicError);
+      }
+    }
   } catch (error) {
-    console.error('Failed to fetch CSRF token:', error);
+    console.error('Failed to fetch CSRF token from authenticated endpoint:', error);
+    // Network or other error on /auth/me/; attempt the public CSRF endpoint as a fallback
+    try {
+      await fetch(`${API_BASE_URL}/csrf/`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+    } catch (publicError) {
+      console.error('Failed to fetch CSRF token from public endpoint:', publicError);
+    }
   }
 }
