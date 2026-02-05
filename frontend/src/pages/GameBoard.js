@@ -746,7 +746,7 @@ function Body() {
     try {
       const allShipPositions = placedShips.flatMap(ship => ship.positions);
       
-      const response = await axios.post(
+      await axios.post(
         `${API_BASE_URL}/games/${gameId}/ships/`,
         {
           ship_type: 'fleet',
