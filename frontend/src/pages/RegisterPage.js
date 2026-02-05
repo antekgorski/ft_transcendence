@@ -57,9 +57,10 @@ function RegisterPage() {
       if (response.ok) {
         setSuccess('Registration successful! Redirecting to login...');
         
-        // Redirect to login page after showing success message
+        // Redirect to login page after showing success message,
+        // passing the username so it can be pre-filled.
         setTimeout(() => {
-          navigate('/');
+          navigate(`/?username=${encodeURIComponent(formData.username)}`);
         }, 2000);
       } else {
         setError(data.error || data.error_pl || 'Registration failed');
