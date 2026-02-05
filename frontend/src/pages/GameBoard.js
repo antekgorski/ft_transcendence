@@ -622,7 +622,7 @@ function Body() {
     }
     
     try {
-      const response = await axios.post(
+      await axios.post(
         `${API_BASE_URL}/games/${gameId}/forfeit/`,
         {},
         { withCredentials: true }
