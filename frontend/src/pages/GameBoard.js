@@ -280,10 +280,12 @@ function Body() {
 
               setError(null);
               setGameLoading(false);
+              setIsCreatingGame(false);
               return;
             }
           }
 
+          setIsCreatingGame(false);
           throw createErr;
         }
         setIsCreatingGame(false);
