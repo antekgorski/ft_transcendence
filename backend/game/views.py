@@ -737,6 +737,14 @@ class GameViewSet(viewsets.ModelViewSet):
 
         # For AI games: start game when player_1 finishes ship placement
         if game.game_type == 'ai' and game.status == 'pending' and player_key == 'player_1':
+            # Ensure AI ships exist before activating the game
+            ai_ships = self.redis_manager.get_ships(str(game.id), 'player_2')
+            if not ai_ships or not ai_ships.get('positions'):
+                logger.error(f"AI ships not initialized for game {game.id}; cannot start AI game.")
+                return Response(
+                    {'error': 'AI opponent is not ready. Please try again.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
             game.status = 'active'
             game.started_at = timezone.now()
             game.save(update_fields=['status', 'started_at'])
