@@ -405,9 +405,9 @@ class GameViewSet(viewsets.ModelViewSet):
             }
         )
         
-        # Set password for AI user if just created
+        # Set an unusable password for AI user if just created to prevent login with a static password
         if created:
-            ai_user.set_password('ai_opponent_system_password')
+            ai_user.set_unusable_password()
             ai_user.save()
         
         game = Game.objects.create(
