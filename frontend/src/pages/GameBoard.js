@@ -323,7 +323,7 @@ function Body() {
     if (user) {
       initializeGame();
     }
-  }, [user, loadShipsToBoard]);
+  }, [user]);
 
   useEffect(() => {
     let timerId;
