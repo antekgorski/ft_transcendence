@@ -154,7 +154,9 @@ function PlayerStats() {
             <p><span className="text-emerald-400 font-semibold">Total Shots:</span> {loading ? 'Loading...' : (stats.totalShots ?? '0')}</p>
             <p><span className="text-emerald-400 font-semibold">Total Hits:</span> {loading ? 'Loading...' : (stats.totalHits ?? '0')}</p>
             <p><span className="text-emerald-400 font-semibold">Accuracy:</span> {loading ? 'Loading...' : (stats.accuracyPercentage !== null ? `${stats.accuracyPercentage}%` : 'N/A')}</p>
-            <p><span className="text-emerald-400 font-semibold">Best Game Duration:</span> {loading ? 'Loading...' : formatDuration(stats.bestGameDurationSeconds)}</p>
+            {stats.bestGameDurationSeconds > 0 && (
+              <p><span className="text-emerald-400 font-semibold">Quickest Win:</span> {loading ? 'Loading...' : formatDuration(stats.bestGameDurationSeconds)}</p>
+            )}
           </div>
         </div>
 

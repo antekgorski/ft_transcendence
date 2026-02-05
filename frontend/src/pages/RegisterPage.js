@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import api from '../utils/api';
@@ -51,12 +51,8 @@ function RegisterPage() {
 
       if (response.status === 201) {
         setSuccess('Registration successful! Logging you in...');
-        
-        // Verify the session was created and load user data
-        setTimeout(async () => {
-          await checkAuth();
-          navigate('/');
-        }, 1000);
+        // checkAuth will be called in useEffect when success is set
+        await checkAuth();
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error || 
@@ -64,10 +60,20 @@ function RegisterPage() {
                        'Registration failed';
       setError(errorMsg);
       console.error('Registration error:', err);
-    } finally {
       setLoading(false);
     }
   };
+
+  // Cleanup timeout on unmount and redirect after successful registration
+  useEffect(() => {
+    if (!success) return;
+    
+    const timer = setTimeout(() => {
+      navigate('/');
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [success, navigate]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 p-5">

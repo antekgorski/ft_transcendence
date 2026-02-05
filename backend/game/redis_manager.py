@@ -200,3 +200,17 @@ class GameStateManager:
         """Clear notifications for a user."""
         notifications_key = f"notifications:{user_id}"
         self.redis_client.delete(notifications_key)
+    
+    def add_inactive_cells(self, game_id, player_key, inactive_cells):
+        """Store inactive cells (boundaries around sunk ships)."""
+        inactive_key = f"game:{game_id}:{player_key}:inactive"
+        # Add all inactive cells to a set (union)
+        for cell in inactive_cells:
+            self.redis_client.sadd(inactive_key, json.dumps(cell))
+        self.redis_client.expire(inactive_key, self.game_expiration)
+    
+    def get_inactive_cells(self, game_id, player_key):
+        """Get all inactive cells for a player."""
+        inactive_key = f"game:{game_id}:{player_key}:inactive"
+        data = self.redis_client.smembers(inactive_key)
+        return [json.loads(cell) for cell in data] if data else []

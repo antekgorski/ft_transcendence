@@ -1,6 +1,7 @@
 import { createContext, useState, useEffect } from 'react';
 import api from '../utils/api';
 import { fetchCsrfToken } from '../utils/csrf';
+import { gameSocket } from '../utils/socket';
 
 export const AuthContext = createContext();
 
@@ -13,6 +14,8 @@ export const AuthProvider = ({ children }) => {
       // Verify authentication via backend - this validates the session cookie
       const res = await api.get('/auth/me/');
       setUser(res.data);
+      // Connect to WebSocket after successful authentication
+      gameSocket.preConnect();
     } catch (err) {
       // Not authenticated or session invalid
       setUser(null);

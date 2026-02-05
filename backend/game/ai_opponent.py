@@ -167,6 +167,19 @@ class AIOpponent:
         for pos in positions:
             if board['grid'][pos['x']][pos['y']] is not None:
                 return False
+
+        # Disallow adjacent ships (including diagonals)
+        position_set = {(pos['x'], pos['y']) for pos in positions}
+        for pos in positions:
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    nx = pos['x'] + dx
+                    ny = pos['y'] + dy
+                    if 0 <= nx < self.BOARD_SIZE and 0 <= ny < self.BOARD_SIZE:
+                        if (nx, ny) not in position_set and board['grid'][nx][ny] is not None:
+                            return False
         
         return True
     

@@ -192,6 +192,11 @@ class GameViewSet(viewsets.ModelViewSet):
     def _trace_ship(self, start_pos, all_coords, used):
         """Trace a ship from a starting position (horizontal or vertical).
         
+        Note: When both horizontal and vertical directions have equal length,
+        horizontal is preferred. This ensures consistent ship detection when
+        loading saved positions. Recommend storing ship orientation explicitly
+        in ship data structure to avoid ambiguity.
+        
         Returns list of coordinates that form a contiguous line, or None if not found.
         Includes single-cell ships (submarines).
         """
@@ -214,6 +219,7 @@ class GameViewSet(viewsets.ModelViewSet):
                 break
         
         # Return the longer ship (prioritize direction with more cells)
+        # If equal length, prefer horizontal for consistency
         if len(h_ship) > 1 and len(h_ship) >= len(v_ship):
             return h_ship
         elif len(v_ship) > 1:
@@ -391,6 +397,31 @@ class GameViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(game)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def _extract_ai_ships(self, ai_board):
+        """Extract AI ship positions from generated board."""
+        ai_ships = {
+            'type': 'ai_fleet',
+            'positions': []
+        }
+
+        if 'ships' in ai_board and isinstance(ai_board['ships'], dict):
+            for ship_name, ship_data in ai_board['ships'].items():
+                if isinstance(ship_data, dict) and 'positions' in ship_data:
+                    positions = ship_data.get('positions', [])
+                    if isinstance(positions, list):
+                        ai_ships['positions'].extend(positions)
+                    else:
+                        logger.warning(f"AI ship {ship_name} has invalid positions format: {type(positions)}")
+                else:
+                    logger.warning(f"AI ship {ship_name} missing positions: {ship_data}")
+        else:
+            logger.error(f"AI board has invalid or missing ships structure: {ai_board}")
+
+        if not ai_ships['positions']:
+            return None
+
+        return ai_ships
     
     def _create_ai_game(self, player_1):
         """Create an AI game."""
@@ -429,28 +460,8 @@ class GameViewSet(viewsets.ModelViewSet):
         ai_board = self.ai_opponent.generate_initial_board()
         self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
         
-        # Also store AI ships in the ships key for consistency
-        ai_ships = {
-            'type': 'ai_fleet',
-            'positions': []
-        }
-        
-        # Extract all ship positions from AI board with validation
-        if 'ships' in ai_board and isinstance(ai_board['ships'], dict):
-            for ship_name, ship_data in ai_board['ships'].items():
-                if isinstance(ship_data, dict) and 'positions' in ship_data:
-                    positions = ship_data.get('positions', [])
-                    if isinstance(positions, list):
-                        ai_ships['positions'].extend(positions)
-                    else:
-                        logger.warning(f"AI ship {ship_name} has invalid positions format: {type(positions)}")
-                else:
-                    logger.warning(f"AI ship {ship_name} missing positions: {ship_data}")
-        else:
-            logger.error(f"AI board has invalid or missing ships structure: {ai_board}")
-        
-        # Validate that AI ships were properly extracted
-        if not ai_ships['positions']:
+        ai_ships = self._extract_ai_ships(ai_board)
+        if not ai_ships:
             logger.error(f"Failed to extract AI ship positions from board: {ai_board}")
             return Response(
                 {'error': 'Failed to initialize AI opponent'},
@@ -740,11 +751,16 @@ class GameViewSet(viewsets.ModelViewSet):
             # Ensure AI ships exist before activating the game
             ai_ships = self.redis_manager.get_ships(str(game.id), 'player_2')
             if not ai_ships or not ai_ships.get('positions'):
-                logger.error(f"AI ships not initialized for game {game.id}; cannot start AI game.")
-                return Response(
-                    {'error': 'AI opponent is not ready. Please try again.'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+                ai_board = self.ai_opponent.generate_initial_board()
+                self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
+                ai_ships = self._extract_ai_ships(ai_board)
+                if not ai_ships:
+                    logger.error(f"AI ships not initialized for game {game.id}; cannot start AI game.")
+                    return Response(
+                        {'error': 'AI opponent is not ready. Please try again.'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                self.redis_manager.set_ships(str(game.id), 'player_2', ai_ships)
             game.status = 'active'
             game.started_at = timezone.now()
             game.save(update_fields=['status', 'started_at'])
@@ -807,6 +823,59 @@ class GameViewSet(viewsets.ModelViewSet):
             'both_ready': player_1_ready and player_2_ready,
             'player_1_ships': player_1_ships,
             'player_2_ships': player_2_ships if game.game_type != 'ai' else None  # Don't expose AI ships
+        })
+
+    @action(detail=True, methods=['get'])
+    def shots(self, request, id=None):
+        """Get shot history for a game, sorted by timestamp.
+        
+        Returns:
+        {
+            "player_1_shots": [
+                {"row": 0, "col": 5, "result": "hit", "timestamp": "2026-02-05T14:30:00Z", "sunk": false}
+            ],
+            "player_2_shots": [
+                {"row": 3, "col": 2, "result": "miss", "timestamp": "2026-02-05T14:30:01Z", "sunk": false}
+            ],
+            "player_1_inactive": [{"row": 1, "col": 5}, ...],
+            "player_2_inactive": [{"row": 2, "col": 3}, ...],
+            "current_turn": "player_1_id" or "player_2_id"
+        }
+        """
+        try:
+            game = Game.objects.get(id=id)
+        except Game.DoesNotExist:
+            return Response(
+                {'error': 'Game not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        user = request.user
+        
+        # Verify user is in the game
+        if game.player_1_id != user.id and game.player_2_id != user.id:
+            return Response(
+                {'error': 'User not in this game'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        redis_manager = GameStateManager()
+        player_1_shots = redis_manager.get_shots(str(game.id), 'player_1') or []
+        player_2_shots = redis_manager.get_shots(str(game.id), 'player_2') or []
+        player_1_inactive = redis_manager.get_inactive_cells(str(game.id), 'player_1') or []
+        player_2_inactive = redis_manager.get_inactive_cells(str(game.id), 'player_2') or []
+        current_turn = redis_manager.get_current_turn(str(game.id))
+        
+        # Sort shots by timestamp (Redis returns in reverse order)
+        def sort_by_timestamp(shots):
+            return sorted(shots, key=lambda s: s.get('timestamp', ''), reverse=False)
+        
+        return Response({
+            'player_1_shots': sort_by_timestamp(player_1_shots),
+            'player_2_shots': sort_by_timestamp(player_2_shots),
+            'player_1_inactive': player_1_inactive,
+            'player_2_inactive': player_2_inactive,
+            'current_turn': current_turn
         })
 
     @action(detail=False, methods=['get'])
@@ -892,7 +961,7 @@ class GameViewSet(viewsets.ModelViewSet):
                 # Update longest streak if current is higher
                 if player_1_stats.current_win_streak > player_1_stats.longest_win_streak:
                     player_1_stats.longest_win_streak = player_1_stats.current_win_streak
-                # Update best game duration (only for wins)
+                # Track fastest win (shortest game duration for wins only)
                 if game.duration_seconds < player_1_stats.best_game_duration_seconds or player_1_stats.best_game_duration_seconds == 0:
                     player_1_stats.best_game_duration_seconds = game.duration_seconds
                 
@@ -904,7 +973,7 @@ class GameViewSet(viewsets.ModelViewSet):
                 # Update longest streak if current is higher
                 if player_2_stats.current_win_streak > player_2_stats.longest_win_streak:
                     player_2_stats.longest_win_streak = player_2_stats.current_win_streak
-                # Update best game duration (only for wins)
+                # Track fastest win (shortest game duration for wins only)
                 if game.duration_seconds < player_2_stats.best_game_duration_seconds or player_2_stats.best_game_duration_seconds == 0:
                     player_2_stats.best_game_duration_seconds = game.duration_seconds
                 
@@ -933,7 +1002,7 @@ class GameViewSet(viewsets.ModelViewSet):
                 # Update longest streak if current is higher
                 if player_1_stats.current_win_streak > player_1_stats.longest_win_streak:
                     player_1_stats.longest_win_streak = player_1_stats.current_win_streak
-                # Update best game duration (only for wins)
+                # Track fastest win (shortest game duration for wins only)
                 if game.duration_seconds < player_1_stats.best_game_duration_seconds or player_1_stats.best_game_duration_seconds == 0:
                     player_1_stats.best_game_duration_seconds = game.duration_seconds
             else:
