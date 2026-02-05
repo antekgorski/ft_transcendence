@@ -33,7 +33,7 @@ export function getCsrfToken() {
  */
 export async function fetchCsrfToken() {
   try {
-    const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
+    const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://localhost:8080/api';
     await fetch(`${API_BASE_URL}/auth/me/`, {
       method: 'GET',
       credentials: 'include',
