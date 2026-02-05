@@ -1,4 +1,5 @@
 import React, { useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 
@@ -29,6 +30,7 @@ function Template({ children }) {
 }
 
 function LogoutButton() {
+  const navigate = useNavigate();
   const { setUser } = useContext(AuthContext);
 
   const handleLogout = async () => {
@@ -38,6 +40,7 @@ function LogoutButton() {
         credentials: 'include',
       });
       setUser(null);
+      navigate('/');
     } catch (err) {
       console.error('Logout error:', err);
     }

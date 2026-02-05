@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 import { Template } from './Components';
@@ -298,14 +299,15 @@ function Avatar() {
   );
 }
 
-function Body({ onNavigate }) {
+function Body() {
+  const navigate = useNavigate();
   return (
-    <div className="space-y-6 w-full max-w-6xl mx-auto">
+    <div className="space-y-6 w-full max-w-6xl mx-auto text-white">
       {/* Menu return button */}
-      <div className="mb-4">
+      <div className="max-w-6xl mx-auto mb-4">
         <button
-          onClick={() => onNavigate('router')}
-          className="px-4 py-2 bg-slate-600 hover:bg-slate-700 rounded-md font-semibold transition-colors"
+          onClick={() => navigate('/menu')}
+          className="px-4 py-2 text-sm sm:text-base bg-slate-600 hover:bg-slate-700 rounded-md font-semibold transition-colors"
         >
           ← Back to Menu
         </button>
@@ -320,10 +322,10 @@ function Body({ onNavigate }) {
   );
 }
 
-function ProfilePage({ onNavigate }) {
+function ProfilePage() {
   return (
     <Template>
-      <Body onNavigate={onNavigate} />
+      <Body />
     </Template>
   );
 }

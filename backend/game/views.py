@@ -61,7 +61,7 @@ class GameViewSet(viewsets.ModelViewSet):
         user = request.user
         active_game = Game.objects.filter(
             Q(player_1_id=user.id) | Q(player_2_id=user.id),
-            status='active'
+            status__in=['pending', 'active']
         ).first()
         
         if not active_game:
@@ -194,7 +194,7 @@ class GameViewSet(viewsets.ModelViewSet):
             player_1=player_1,
             player_2=None,
             game_type='ai',
-            status='active'
+            status='pending'
         )
         
         # Initialize AI game state in Redis
@@ -208,6 +208,19 @@ class GameViewSet(viewsets.ModelViewSet):
         # Generate AI's initial board and ships
         ai_board = self.ai_opponent.generate_initial_board()
         self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
+        
+        # Also store AI ships in the ships key for consistency
+        ai_ships = {
+            'type': 'ai_fleet',
+            'positions': []
+        }
+        
+        # Extract all ship positions from AI board
+        if 'ships' in ai_board:
+            for ship_name, ship_data in ai_board['ships'].items():
+                ai_ships['positions'].extend(ship_data.get('positions', []))
+        
+        self.redis_manager.set_ships(str(game.id), 'player_2', ai_ships)
         
         serializer = self.get_serializer(game)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -444,7 +457,6 @@ class GameViewSet(viewsets.ModelViewSet):
         
         # Check if player has already placed ships
         existing_ships = self.redis_manager.get_ships(str(game.id), player_key)
-        
         if existing_ships:
             return Response(
                 {'error': 'Ships already placed for this player'},
@@ -462,11 +474,26 @@ class GameViewSet(viewsets.ModelViewSet):
             )
         
         # Store ships in Redis
+        ship_data = {'type': ship_type, 'positions': positions}
+        
         self.redis_manager.set_ships(
             str(game.id),
             player_key,
-            {'type': ship_type, 'positions': positions}
+            ship_data
         )
+
+        # For AI games: start game when player_1 finishes ship placement
+        if game.game_type == 'ai' and game.status == 'pending' and player_key == 'player_1':
+            game.status = 'active'
+            game.started_at = timezone.now()
+            game.save(update_fields=['status', 'started_at'])
+
+            # Update Redis game state
+            self.redis_manager.set_game_status(str(game.id), 'active')
+            self.redis_manager.set_current_turn(str(game.id), str(game.player_1_id))
+        
+        # Verify it was stored
+        stored = self.redis_manager.get_ships(str(game.id), player_key)
         
         return Response({'status': 'Ships placed successfully'})
     
@@ -478,7 +505,9 @@ class GameViewSet(viewsets.ModelViewSet):
         {
             "player_1_ready": true/false,
             "player_2_ready": true/false,
-            "both_ready": true/false
+            "both_ready": true/false,
+            "player_1_ships": {...} or null,
+            "player_2_ships": {...} or null
         }
         """
         try:
@@ -501,13 +530,16 @@ class GameViewSet(viewsets.ModelViewSet):
         player_1_ships = self.redis_manager.get_ships(str(game.id), 'player_1')
         player_2_ships = self.redis_manager.get_ships(str(game.id), 'player_2')
         
+        # For AI games, player_2 ships are automatically placed
         player_1_ready = player_1_ships is not None
-        player_2_ready = player_2_ships is not None
+        player_2_ready = player_2_ships is not None or game.game_type == 'ai'
         
         return Response({
             'player_1_ready': player_1_ready,
             'player_2_ready': player_2_ready,
-            'both_ready': player_1_ready and player_2_ready
+            'both_ready': player_1_ready and player_2_ready,
+            'player_1_ships': player_1_ships,
+            'player_2_ships': player_2_ships if game.game_type != 'ai' else None  # Don't expose AI ships
         })
 
     
@@ -560,6 +592,9 @@ class GameViewSet(viewsets.ModelViewSet):
                 # Update longest streak if current is higher
                 if player_1_stats.current_win_streak > player_1_stats.longest_win_streak:
                     player_1_stats.longest_win_streak = player_1_stats.current_win_streak
+                # Update best game duration (only for wins)
+                if game.duration_seconds < player_1_stats.best_game_duration_seconds or player_1_stats.best_game_duration_seconds == 0:
+                    player_1_stats.best_game_duration_seconds = game.duration_seconds
                 
                 player_2_stats.games_lost += 1
                 player_2_stats.current_win_streak = 0
@@ -569,15 +604,12 @@ class GameViewSet(viewsets.ModelViewSet):
                 # Update longest streak if current is higher
                 if player_2_stats.current_win_streak > player_2_stats.longest_win_streak:
                     player_2_stats.longest_win_streak = player_2_stats.current_win_streak
+                # Update best game duration (only for wins)
+                if game.duration_seconds < player_2_stats.best_game_duration_seconds or player_2_stats.best_game_duration_seconds == 0:
+                    player_2_stats.best_game_duration_seconds = game.duration_seconds
                 
                 player_1_stats.games_lost += 1
                 player_1_stats.current_win_streak = 0
-            
-            # Update best game duration
-            if game.duration_seconds > player_1_stats.best_game_duration_seconds:
-                player_1_stats.best_game_duration_seconds = game.duration_seconds
-            if game.duration_seconds > player_2_stats.best_game_duration_seconds:
-                player_2_stats.best_game_duration_seconds = game.duration_seconds
             
             # Update accuracy
             if player_1_stats.total_shots > 0:
@@ -601,13 +633,12 @@ class GameViewSet(viewsets.ModelViewSet):
                 # Update longest streak if current is higher
                 if player_1_stats.current_win_streak > player_1_stats.longest_win_streak:
                     player_1_stats.longest_win_streak = player_1_stats.current_win_streak
+                # Update best game duration (only for wins)
+                if game.duration_seconds < player_1_stats.best_game_duration_seconds or player_1_stats.best_game_duration_seconds == 0:
+                    player_1_stats.best_game_duration_seconds = game.duration_seconds
             else:
                 player_1_stats.games_lost += 1
                 player_1_stats.current_win_streak = 0
-            
-            # Update best game duration
-            if game.duration_seconds > player_1_stats.best_game_duration_seconds:
-                player_1_stats.best_game_duration_seconds = game.duration_seconds
             
             # Update accuracy
             if player_1_stats.total_shots > 0:

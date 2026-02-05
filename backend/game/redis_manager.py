@@ -36,12 +36,14 @@ class GameStateManager:
         """Create a new game session in Redis."""
         game_key = f"game:{game_id}"
         
+        normalized_player_2_id = player_2_id or ''
+
         game_data = {
-            'game_id': game_id,
-            'player_1_id': player_1_id,
-            'player_2_id': player_2_id,
-            'game_type': game_type,
-            'status': 'pending' if game_type == 'pvp' else 'active',
+            'game_id': str(game_id),
+            'player_1_id': str(player_1_id),
+            'player_2_id': str(normalized_player_2_id),
+            'game_type': str(game_type),
+            'status': 'pending',
             'created_at': datetime.utcnow().isoformat(),
         }
         
