@@ -113,7 +113,7 @@ class GameViewSet(viewsets.ModelViewSet):
         y_coords = [pos['y'] for pos in positions]
         
         # Sort coordinates for contiguity check
-        coords_sorted = sorted(coords)
+        # (sorting is handled via x_sorted and y_sorted below)
         
         # Check if horizontal (same y, consecutive x)
         if len(set(y_coords)) == 1:
