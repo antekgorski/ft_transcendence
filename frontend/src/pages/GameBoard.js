@@ -639,45 +639,71 @@ function Body() {
 
   // Funkcja losowego rozmieszczenia statków
   const randomizeShips = () => {
-    const newBoard = createEmptyBoard();
-    const newPlacedShips = [];
+    // Maksymalna liczba prób wygenerowania całej losowej planszy
+    let remainingBoardAttempts = 50;
+
+    let newBoard = null;
+    let newPlacedShips = [];
     const shipSizes = [...allShips];
 
-    // Tasujemy orientacje dla każdego statku
-    for (const size of shipSizes) {
-      let placed = false;
-      let attempts = 0;
-      
-      while (!placed && attempts < 100) {
-        const randomRow = Math.floor(Math.random() * BOARD_SIZE);
-        const randomCol = Math.floor(Math.random() * BOARD_SIZE);
-        const randomOrientation = Math.random() > 0.5 ? 'horizontal' : 'vertical';
+    // Próbujemy wielokrotnie wygenerować pełne ustawienie wszystkich statków
+    while (remainingBoardAttempts > 0) {
+      newBoard = createEmptyBoard();
+      newPlacedShips = [];
 
-        if (canPlaceShip(newBoard, randomRow, randomCol, size, randomOrientation)) {
-          const shipPositions = [];
-          
-          if (randomOrientation === 'horizontal') {
-            for (let c = randomCol; c < randomCol + size; c += 1) {
-              newBoard[randomRow][c] = CELL_TYPES.SHIP;
-              shipPositions.push({ x: randomRow, y: c });
+      // Tasujemy orientacje i pozycje dla każdego statku
+      for (const size of shipSizes) {
+        let placed = false;
+        let attempts = 0;
+
+        while (!placed && attempts < 100) {
+          const randomRow = Math.floor(Math.random() * BOARD_SIZE);
+          const randomCol = Math.floor(Math.random() * BOARD_SIZE);
+          const randomOrientation = Math.random() > 0.5 ? 'horizontal' : 'vertical';
+
+          if (canPlaceShip(newBoard, randomRow, randomCol, size, randomOrientation)) {
+            const shipPositions = [];
+
+            if (randomOrientation === 'horizontal') {
+              for (let c = randomCol; c < randomCol + size; c += 1) {
+                newBoard[randomRow][c] = CELL_TYPES.SHIP;
+                shipPositions.push({ x: randomRow, y: c });
+              }
+            } else {
+              for (let r = randomRow; r < randomRow + size; r += 1) {
+                newBoard[r][randomCol] = CELL_TYPES.SHIP;
+                shipPositions.push({ x: r, y: randomCol });
+              }
             }
-          } else {
-            for (let r = randomRow; r < randomRow + size; r += 1) {
-              newBoard[r][randomCol] = CELL_TYPES.SHIP;
-              shipPositions.push({ x: r, y: randomCol });
-            }
+
+            newPlacedShips.push({
+              size: size,
+              positions: shipPositions
+            });
+            placed = true;
           }
-
-          newPlacedShips.push({
-            size: size,
-            positions: shipPositions
-          });
-          placed = true;
+          attempts += 1;
         }
-        attempts++;
+
+        // Jeśli nie udało się umieścić tego statku, przerywamy tę próbę ustawienia
+        if (!placed) {
+          break;
+        }
       }
+
+      // Jeśli udało się umieścić wszystkie statki, kończymy pętlę
+      if (newPlacedShips.length === shipSizes.length) {
+        break;
+      }
+
+      remainingBoardAttempts -= 1;
     }
 
+    // Jeśli po wielu próbach nadal nie udało się rozmieścić wszystkich statków, zgłaszamy błąd
+    if (!newBoard || newPlacedShips.length !== shipSizes.length) {
+      setStatusMessage('Error: Unable to place all ships randomly. Please try again.');
+      return;
+    }
     setPlayerBoard(newBoard);
     setPlacedShips(newPlacedShips);
     setStatusMessage('Ships placed randomly! Click "Start Game" to begin.');
