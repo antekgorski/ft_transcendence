@@ -756,9 +756,7 @@ function Body() {
         { withCredentials: true }
       );
       
-      if (gameId) {
-        localStorage.removeItem(`game_${gameId}_ships`);
-      }
+      localStorage.removeItem(`game_${gameId}_ships`);
       
       setIsPlacingShips(false);
       setStatusMessage('Game started! Your turn - shoot on enemy board.');
