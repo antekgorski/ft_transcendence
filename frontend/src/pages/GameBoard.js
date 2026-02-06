@@ -68,7 +68,6 @@ function Body() {
   const [draggedShip, setDraggedShip] = useState(null);
   const [hoverCell, setHoverCell] = useState(null);
   const [dragRestore, setDragRestore] = useState(null);
-  const [didDrop, setDidDrop] = useState(false);
   const dragBaseRef = useRef(null);
   const didDropRef = useRef(false);
   const draggedShipRef = useRef(null);
