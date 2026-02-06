@@ -204,14 +204,14 @@ class GameHistorySerializer(serializers.ModelSerializer):
         read_only_fields = fields
     
     def get_opponent_username(self, obj):
-        """Get the opponent's display name based on the current user."""
+        """Get the opponent's username based on the current user."""
         request = self.context.get('request')
         if request:
             current_user = request.user
             if obj.player_1_id == current_user.id:
-                return obj.player_2.display_name if obj.player_2 else 'Unknown'
+                return obj.player_2.username if obj.player_2 else 'Unknown'
             else:
-                return obj.player_1.display_name if obj.player_1 else 'Unknown'
+                return obj.player_1.username if obj.player_1 else 'Unknown'
         return None
     
     def get_opponent_avatar_url(self, obj):
