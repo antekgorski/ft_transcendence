@@ -43,6 +43,22 @@ function Body({ onNavigate }) {
   const [orientation, setOrientation] = useState('horizontal');
   // Stan komunikatu dla użytkownika.
   const [statusMessage, setStatusMessage] = useState('Place your ships on your board.');
+  // Stan przechowujący ID gry z backendu.
+  const [gameId, setGameId] = useState(null);
+  // Stan przechowujący typ gry (pvp lub ai).
+  const [gameType, setGameType] = useState(null);
+  // Stan określający fazę gry.
+  const [gamePhase, setGamePhase] = useState('lobby');
+  // Stan określający czy to moja tura.
+  const [isMyTurn, setIsMyTurn] = useState(false);
+  // Stan przechowujący ID przeciwnika.
+  const [opponentId, setOpponentId] = useState(null);
+  // Stan przechowujący instancję WebSocket.
+  const [websocket, setWebsocket] = useState(null);
+  // Stan informujący czy statki zostały rozstawione przez graczy.
+  const [shipsPlaced, setShipsPlaced] = useState({ player1: false, player2: false });
+  // Stan przechowujący dane o rozmieszczonych statkach.
+  const [placedShipsData, setPlacedShipsData] = useState([]);
 
   // Lista dostępnych statków (długości) do rozmieszczenia.
   const availableShips = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
