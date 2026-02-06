@@ -62,6 +62,39 @@ function Body({ onNavigate }) {
 
   // Lista dostępnych statków (długości) do rozmieszczenia.
   const availableShips = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
+  // Konfiguracja statków z nazwą i rozmiarem (do walidacji i UI).
+  const SHIP_CONFIGS = [
+    // Jeden statek długości 4.
+    { id: 'battleship', size: 4, label: 'Battleship (4)' },
+    // Dwa statki długości 3.
+    { id: 'cruiser-1', size: 3, label: 'Cruiser (3)' },
+    { id: 'cruiser-2', size: 3, label: 'Cruiser (3)' },
+    // Trzy statki długości 2.
+    { id: 'destroyer-1', size: 2, label: 'Destroyer (2)' },
+    { id: 'destroyer-2', size: 2, label: 'Destroyer (2)' },
+    { id: 'destroyer-3', size: 2, label: 'Destroyer (2)' },
+    // Cztery statki długości 1.
+    { id: 'submarine-1', size: 1, label: 'Submarine (1)' },
+    { id: 'submarine-2', size: 1, label: 'Submarine (1)' },
+    { id: 'submarine-3', size: 1, label: 'Submarine (1)' },
+    { id: 'submarine-4', size: 1, label: 'Submarine (1)' },
+  ];
+
+  // Funkcja licząca ile statków danego rozmiaru zostało już rozstawionych.
+  const countPlacedShipsBySize = (size) => {
+    // Filtrujemy placedShipsData po rozmiarze statku.
+    return placedShipsData.filter((ship) => ship.size === size).length;
+  };
+
+  // Funkcja sprawdzająca czy można jeszcze rozstawić statek danego rozmiaru.
+  const canPlaceMoreShipsOfSize = (size) => {
+    // Liczymy ile statków danego rozmiaru jest w konfiguracji.
+    const totalAllowed = SHIP_CONFIGS.filter((ship) => ship.size === size).length;
+    // Liczymy ile już rozstawiono.
+    const alreadyPlaced = countPlacedShipsBySize(size);
+    // Zwracamy true jeśli można jeszcze dodać.
+    return alreadyPlaced < totalAllowed;
+  };
 
   // Funkcja sprawdzająca, czy statek może zostać ustawiony w danym miejscu.
   const canPlaceShip = (board, row, col, size, dir) => {
