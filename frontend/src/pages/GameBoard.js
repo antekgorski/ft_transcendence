@@ -1,5 +1,6 @@
 // Importujemy React i hook useState do zarządzania stanem komponentu.
 import React, { useState } from 'react';
+import gameApi from '../services/gameApi';
 import { Template } from './Components';
 
 // Deklarujemy stałą z rozmiarem planszy (10x10).
@@ -235,6 +236,38 @@ function Body({ onNavigate }) {
     setOrientation((prev) => (prev === 'horizontal' ? 'vertical' : 'horizontal'));
   };
 
+  // Funkcja tworząca nową grę przez backend.
+  const handleCreateGame = async () => {
+    try {
+      // Sprawdzamy czy wybrano tryb gry.
+      if (!gameType) {
+        setStatusMessage('Select game mode first.');
+        return;
+      }
+
+      // Jeśli PvP, sprawdzamy czy podano ID przeciwnika.
+      if (gameType === 'pvp' && !opponentId) {
+        setStatusMessage('Provide opponent ID for PvP.');
+        return;
+      }
+
+      // Wywołujemy backend, aby stworzyć grę.
+      const game = await gameApi.createGame(gameType, opponentId);
+
+      // Zapisujemy ID gry.
+      setGameId(game.id);
+      // Zapisujemy typ gry.
+      setGameType(game.game_type);
+      // Ustawiamy fazę gry na rozmieszczanie statków.
+      setGamePhase('placing');
+      // Aktualizujemy status.
+      setStatusMessage('Game created. Place your ships.');
+    } catch (error) {
+      // Obsługujemy błąd tworzenia gry.
+      setStatusMessage(`Failed to create game: ${error.message}`);
+    }
+  };
+
   // Funkcja zwracająca klasę Tailwind dla danego typu pola.
   const getCellClass = (cellType, isEnemy) => {
     // Klasy bazowe dla wszystkich pól.
@@ -330,6 +363,16 @@ function Body({ onNavigate }) {
                 />
               </div>
             )}
+
+            {/* Przycisk rozpoczęcia gry */}
+            <div className="mt-4">
+              <button
+                className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500"
+                onClick={handleCreateGame}
+              >
+                Create Game
+              </button>
+            </div>
           </div>
         )}
 
