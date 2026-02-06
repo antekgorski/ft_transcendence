@@ -187,6 +187,25 @@ class GameViewSet(viewsets.ModelViewSet):
         if found_sizes != expected_sizes:
             return False, f"Invalid ship configuration. Expected sizes {expected_sizes}, got {found_sizes}"
         
+        # Ensure ships are not adjacent (no orthogonal or diagonal touching)
+        # Build a mapping from coordinate to ship index for quick lookup
+        coord_to_ship = {}
+        for ship_index, ship in enumerate(ships_found):
+            for coord in ship:
+                coord_to_ship[coord] = ship_index
+        
+        # Check all 8 neighbors around each coordinate to ensure no two
+        # different ships touch, even diagonally.
+        for (x, y), ship_index in coord_to_ship.items():
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    neighbor = (x + dx, y + dy)
+                    neighbor_ship = coord_to_ship.get(neighbor)
+                    if neighbor_ship is not None and neighbor_ship != ship_index:
+                        return False, "Invalid fleet: ships cannot be adjacent, even diagonally"
+        
         return True, None
     
     def _trace_ship(self, start_pos, all_coords, used):
