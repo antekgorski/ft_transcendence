@@ -1,5 +1,5 @@
-// Importujemy React i hook useState do zarządzania stanem komponentu.
-import React, { useState } from 'react';
+// Importujemy React i hooki useState oraz useEffect do zarządzania stanem komponentu.
+import React, { useState, useEffect } from 'react';
 import gameApi from '../services/gameApi';
 import { Template } from './Components';
 
@@ -216,6 +216,25 @@ function Body({ onNavigate }) {
     setStatusMessage(`Shot fired at ${row + 1}, ${col + 1}.`);
   };
 
+  // Funkcja wysyłająca statki do backendu.
+  const placeShipsOnBackend = async () => {
+    try {
+      // Ustawiamy status.
+      setStatusMessage('Sending ships to server...');
+      // Wysyłamy statki do backendu.
+      await gameApi.placeShips(gameId, placedShipsData);
+      // Kończymy fazę rozmieszczania.
+      setIsPlacingShips(false);
+      // Przechodzimy do fazy oczekiwania.
+      setGamePhase('waiting');
+      // Aktualizujemy status.
+      setStatusMessage('Waiting for opponent to place ships...');
+    } catch (error) {
+      // Obsługujemy błąd.
+      setStatusMessage(`Failed to place ships: ${error.message}`);
+    }
+  };
+
   // Funkcja kończąca rozmieszczanie statków.
   const finishPlacement = () => {
     // Sprawdzamy czy wszystkie statki zostały rozstawione.
@@ -224,10 +243,14 @@ function Body({ onNavigate }) {
       setStatusMessage('Place all ships before starting the game.');
       return;
     }
-    // Przechodzimy do fazy strzelania.
-    setIsPlacingShips(false);
-    // Aktualizujemy komunikat.
-    setStatusMessage('Game started! Shoot on enemy board.');
+    // Sprawdzamy czy gra została utworzona.
+    if (!gameId) {
+      // Jeśli nie, prosimy o stworzenie gry.
+      setStatusMessage('Create a game first.');
+      return;
+    }
+    // Wysyłamy statki do backendu.
+    placeShipsOnBackend();
   };
 
   // Funkcja zmieniająca orientację statku.
@@ -267,6 +290,48 @@ function Body({ onNavigate }) {
       setStatusMessage(`Failed to create game: ${error.message}`);
     }
   };
+
+  // Efekt sprawdzający status rozmieszczenia statków u obu graczy.
+  useEffect(() => {
+    // Jeśli nie jesteśmy w fazie oczekiwania albo brak gameId, nie uruchamiamy pollingu.
+    if (gamePhase !== 'waiting' || !gameId) {
+      return undefined;
+    }
+
+    // Funkcja do pobrania statusu z backendu.
+    const fetchShipsStatus = async () => {
+      try {
+        // Pobieramy status z backendu.
+        const status = await gameApi.checkShipsStatus(gameId);
+        // Aktualizujemy stan informacji o rozstawieniu statków.
+        setShipsPlaced({
+          player1: status.player_1_ready,
+          player2: status.player_2_ready,
+        });
+
+        // Sprawdzamy czy obaj gracze są gotowi.
+        const bothReady = status.both_ready || (gameType === 'ai' && status.player_1_ready);
+
+        // Jeśli obaj gotowi, przechodzimy do fazy gry.
+        if (bothReady) {
+          setGamePhase('playing');
+          setStatusMessage('Game started! Shoot on enemy board.');
+        }
+      } catch (error) {
+        // Obsługujemy błąd pobierania statusu.
+        setStatusMessage(`Failed to check ships status: ${error.message}`);
+      }
+    };
+
+    // Uruchamiamy pierwszy fetch natychmiast.
+    fetchShipsStatus();
+
+    // Ustawiamy polling co 2 sekundy.
+    const intervalId = setInterval(fetchShipsStatus, 2000);
+
+    // Czyścimy interval przy odmontowaniu lub zmianie zależności.
+    return () => clearInterval(intervalId);
+  }, [gamePhase, gameId, gameType]);
 
   // Funkcja zwracająca klasę Tailwind dla danego typu pola.
   const getCellClass = (cellType, isEnemy) => {

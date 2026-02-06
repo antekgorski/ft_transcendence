@@ -154,23 +154,35 @@ class GameApiService {
    * Umieszcza statki na planszy gracza.
    * 
    * @param {string} gameId - UUID gry.
-   * @param {Array<object>} ships - Tablica z danymi o statkach.
+   * @param {Array<object>} ships - Tablica z danymi o statkach (wszystkie statki naraz).
    * 
-   * Format ships:
+   * Format ships (frontend):
    * [
    *   { size: 4, cells: [[0,0], [0,1], [0,2], [0,3]] },
    *   { size: 3, cells: [[2,2], [2,3], [2,4]] },
    *   ...
    * ]
    * 
+   * Backend oczekuje pojedynczego obiektu:
+   * {
+   *   ship_type: "fleet",
+   *   positions: [{x: 0, y: 0}, {x: 1, y: 0}, ...]
+   * }
+   * 
    * @returns {Promise<object>} Odpowiedź z backendu.
    * @throws {Error} Błąd z backendu.
    */
   async placeShips(gameId, ships) {
     try {
-      // Przygotowujemy payload
+      // Spłaszczamy wszystkie komórki statków do jednej listy pozycji.
+      const positions = ships.flatMap((ship) =>
+        ship.cells.map(([row, col]) => ({ x: col, y: row }))
+      );
+
+      // Przygotowujemy payload zgodny z backendem.
       const payload = {
-        ships: ships, // Tablica statków
+        ship_type: 'fleet',
+        positions,
       };
 
       // Wysyłamy POST żądanie
