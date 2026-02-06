@@ -96,6 +96,16 @@ function Body({ onNavigate }) {
     return alreadyPlaced < totalAllowed;
   };
 
+  // Funkcja sprawdzająca czy wszystkie statki zostały rozstawione.
+  const areAllShipsPlaced = () => {
+    // Liczymy ile statków powinno być łącznie.
+    const totalShips = SHIP_CONFIGS.length;
+    // Liczymy ile statków już rozstawiono.
+    const placedShips = placedShipsData.length;
+    // Zwracamy true jeśli liczby się zgadzają.
+    return placedShips === totalShips;
+  };
+
   // Funkcja sprawdzająca, czy statek może zostać ustawiony w danym miejscu.
   const canPlaceShip = (board, row, col, size, dir) => {
     // Jeśli orientacja jest pozioma.
@@ -207,6 +217,12 @@ function Body({ onNavigate }) {
 
   // Funkcja kończąca rozmieszczanie statków.
   const finishPlacement = () => {
+    // Sprawdzamy czy wszystkie statki zostały rozstawione.
+    if (!areAllShipsPlaced()) {
+      // Jeśli nie, ustawiamy komunikat i nie przechodzimy dalej.
+      setStatusMessage('Place all ships before starting the game.');
+      return;
+    }
     // Przechodzimy do fazy strzelania.
     setIsPlacingShips(false);
     // Aktualizujemy komunikat.
@@ -288,7 +304,7 @@ function Body({ onNavigate }) {
           <button
             className="px-3 py-2 bg-emerald-600 rounded hover:bg-emerald-500"
             onClick={finishPlacement}
-            disabled={!isPlacingShips}
+            disabled={!isPlacingShips || !areAllShipsPlaced()}
           >
             {/* Tekst przycisku zakończenia */}
             Start Game
