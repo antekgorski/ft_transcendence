@@ -63,7 +63,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             try:
                 await self.close(code=4000)
-            except:
+            except Exception:
                 pass
     
     async def disconnect(self, close_code):
