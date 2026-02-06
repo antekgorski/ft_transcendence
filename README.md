@@ -188,7 +188,7 @@ flowchart LR
 - **Django 4.2**: Python web framework with built-in admin, ORM, and security features
 - **Django REST Framework**: RESTful API development
 - **Channels & Daphne**: WebSocket support for real-time multiplayer gameplay
-- **Django Simple JWT**: Token-based authentication and session management
+- **Django Sessions**: Secure session-based authentication with Redis backend
 
 ### Database & Cache
 - **PostgreSQL 15**: Robust relational database (hosted via Neon) chosen for ACID compliance, complex queries, and excellent Django ORM integration.
@@ -294,10 +294,10 @@ erDiagram
 # Features List
 
 ### User Management
-- **User Registration & Login**: Secure account creation with password hashing, email validation, and JWT-based authentication
+- **User Registration & Login**: Secure account creation with password hashing, email validation, and session-based authentication
 - **OAuth 2.0 Authentication**: Single sign-on via 42 Intra for streamlined access
 - **User Profiles**: Customizable display names, avatar uploads, and language preferences
-- **Session Management**: JWT refresh tokens for secure, persistent sessions
+- **Session Management**: Secure Redis-backed sessions with HttpOnly cookies
 
 ### Social Features
 - **Friendship System**: Send, accept, or block friend requests with real-time status updates

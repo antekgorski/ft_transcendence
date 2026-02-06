@@ -137,44 +137,6 @@ SESSION_COOKIE_SECURE = not DEBUG  # Auto-enabled in production
 CSRF_COOKIE_SECURE = not DEBUG     # Auto-enabled in production
 ```
 
-## What About JWT Tokens?
-
-**Current Status:** `djangorestframework-simplejwt` is installed but **NOT currently used**.
-
-**Current Architecture:** Session-based authentication (cookies)
-- ✅ Simpler implementation
-- ✅ Built-in Django support
-- ✅ Server-side session control
-- ✅ Works well with httpOnly cookies
-
-**JWT Alternative (Optional):**
-If you want to implement JWT in the future:
-
-1. **Advantages:**
-   - Stateless authentication
-   - Better for mobile apps/API-only backends
-   - Can include custom claims
-   - Distributed systems friendly
-
-2. **Implementation:**
-   ```python
-   # settings.py
-   REST_FRAMEWORK = {
-       'DEFAULT_AUTHENTICATION_CLASSES': [
-           'rest_framework_simplejwt.authentication.JWTAuthentication',
-       ],
-   }
-   ```
-
-3. **Security Considerations:**
-   - Store refresh token in httpOnly cookie
-   - Store access token in memory (not localStorage)
-   - Use short expiration times (5-15 min for access token)
-   - Implement token rotation
-   - Use RS256 (asymmetric) for better security
-
-**Recommendation:** Stick with session-based auth unless you need stateless authentication for a specific reason (like microservices or mobile apps).
-
 ## Security Checklist
 
 - ✅ httpOnly cookies for session management

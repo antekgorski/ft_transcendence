@@ -63,7 +63,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             try:
                 await self.close(code=4000)
-            except Exception:
+            except:
                 pass
     
     async def disconnect(self, close_code):
@@ -550,35 +550,21 @@ class GameConsumer(AsyncWebsocketConsumer):
                 return all((r, c) in cells for r, c in active_hits)
             return False
 
-        # Build or reuse a cached heatmap of likely target cells based on current game state.
-        # Cache key is derived from the inputs that affect the heatmap computation.
-        if not hasattr(self, "_ai_heatmap_cache"):
-            self._ai_heatmap_cache = {}
+        heatmap = [[0 for _ in range(10)] for _ in range(10)]
+        for size in remaining_sizes:
+            for r in range(10):
+                for c in range(10):
+                    if c + size <= 10:
+                        cells = [(r, c + i) for i in range(size)]
+                        if placement_valid(cells) and hits_match(cells):
+                            for cell in cells:
+                                heatmap[cell[0]][cell[1]] += 1
+                    if r + size <= 10:
+                        cells = [(r + i, c) for i in range(size)]
+                        if placement_valid(cells) and hits_match(cells):
+                            for cell in cells:
+                                heatmap[cell[0]][cell[1]] += 1
 
-        cache_key = (
-            tuple(sorted(remaining_sizes)),
-            tuple(sorted(shots_set)),
-            tuple(sorted(inactive_cells)),
-            tuple(sorted(active_hits)),
-        )
-
-        heatmap = self._ai_heatmap_cache.get(cache_key)
-        if heatmap is None:
-            heatmap = [[0 for _ in range(10)] for _ in range(10)]
-            for size in remaining_sizes:
-                for r in range(10):
-                    for c in range(10):
-                        if c + size <= 10:
-                            cells = [(r, c + i) for i in range(size)]
-                            if placement_valid(cells) and hits_match(cells):
-                                for cell in cells:
-                                    heatmap[cell[0]][cell[1]] += 1
-                        if r + size <= 10:
-                            cells = [(r + i, c) for i in range(size)]
-                            if placement_valid(cells) and hits_match(cells):
-                                for cell in cells:
-                                    heatmap[cell[0]][cell[1]] += 1
-            self._ai_heatmap_cache[cache_key] = heatmap
         best_score = 0
         best_cells = []
         for r in range(10):
@@ -788,8 +774,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             winner_user = User.objects.get(id=winner_id)
             game.winner = winner_user
         except User.DoesNotExist:
-            # Winner user record may have been deleted; in that case we
-            # finalize the game without setting a winner relation.
             pass
         game.ended_at = timezone.now()
         if game.started_at:

@@ -134,8 +134,8 @@ def register(request):
 def login(request):
     """Simple login endpoint that verifies credentials and returns user data.
 
-    Accepts either username or email as identifier. No JWT/session handling yet –
-    this will be added later according to project design.
+    Accepts either username or email as identifier.
+    Creates a session for the authenticated user.
     """
     identifier = (
         request.data.get('identifier')

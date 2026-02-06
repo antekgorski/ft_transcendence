@@ -44,12 +44,12 @@ sequenceDiagram
                 Backend->>DB: UPDATE User<br/>SET last_login = CURRENT_TIMESTAMP
                 DB-->>Backend: Updated
                 
-                Backend->>Backend: Generate JWT token<br/>(include user_id, username, exp)
+                Backend->>Backend: Create session<br/>(establish session)
                 
                 Backend->>DB: SELECT PlayerStats<br/>WHERE user_id = user.id
                 DB-->>Backend: Player statistics
                 
-                Backend-->>Frontend: Set-Cookie: jwt=token<br/>(HttpOnly, Secure, SameSite)<br/>200 OK {user_data, stats}
+                Backend-->>Frontend: Set session cookie<br/>(HttpOnly, Secure, SameSite)<br/>200 OK {user_data, stats}
                 Frontend->>Frontend: Update app state<br/>(user info, stats)
                 Frontend-->>User: Redirect to dashboard
             end
@@ -91,12 +91,12 @@ sequenceDiagram
             Backend->>DB: UPDATE User<br/>SET last_login = CURRENT_TIMESTAMP<br/>SET avatar_url = latest_42_avatar
             DB-->>Backend: Updated
             
-            Backend->>Backend: Generate JWT token
+            Backend->>Backend: Create session
             
             Backend->>DB: SELECT PlayerStats<br/>WHERE user_id = user.id
             DB-->>Backend: Player statistics
             
-            Backend-->>Frontend: Set-Cookie: jwt=token<br/>(HttpOnly, Secure, SameSite)<br/>200 OK {user_data, stats}
+            Backend-->>Frontend: Set session cookie<br/>(HttpOnly, Secure, SameSite)<br/>200 OK {user_data, stats}
             Frontend->>Frontend: Update app state
             Frontend-->>User: Redirect to dashboard
         end
@@ -119,7 +119,7 @@ sequenceDiagram
    - Manage state parameter for CSRF protection
 
 3. **Session Management**
-   - Receive JWT token via HttpOnly cookie (automatic with credentials)
+   - Receive Session via HttpOnly cookie (automatic with credentials)
    - Configure axios/fetch with `credentials: 'include'` for cookie transmission
    - Handle token expiration and refresh logic
    - Logout by calling backend to clear cookie
@@ -137,7 +137,7 @@ sequenceDiagram
    - Use constant-time comparison for passwords (prevent timing attacks)
    - Implement rate limiting (e.g., max 5 attempts per minute per IP)
    - Add deliberate delay on failed attempts
-   - Generate secure JWT tokens with proper expiration
+   - Generate secure Sessions with proper expiration
    - Set tokens in HttpOnly, Secure, SameSite=Strict cookies
 
 2. **Authentication**
@@ -153,7 +153,7 @@ sequenceDiagram
    - Update avatar and last login time
 
 4. **Response Data**
-   - Set JWT token in HttpOnly cookie
+   - Set Session in HttpOnly cookie
    - Include essential user data (id, username, email, avatar) in response body
    - Attach player statistics
    - Set appropriate HTTP status codes
@@ -186,25 +186,13 @@ FROM PlayerStats
 WHERE user_id = user_id;
 ```
 
-## JWT Token Structure
-
-```json
-{
-  "user_id": "uuid",
-  "username": "player123",
-  "email": "player@example.com",
-  "iat": 1704484800,
-  "exp": 1704571200
-}
-```
-
 ## Security Considerations
 
 1. **Rate Limiting**: Maximum 5 login attempts per IP per minute
 2. **Account Lockout**: Temporary lock after 10 failed attempts
 3. **Password Verification**: Use constant-time comparison
 4. **Generic Error Messages**: Don't reveal if username exists
-5. **JWT Security**: 
+5. **Session Security**: 
    - Store in HttpOnly, Secure, SameSite=Strict cookies
    - Not accessible via JavaScript (protects against XSS attacks)
    - Short expiration time (24 hours)
@@ -229,7 +217,7 @@ WHERE user_id = user_id;
 ### HttpOnly Cookie Configuration
 
 **Backend Cookie Settings**:
-- `key`: 'jwt'
+- `key: sessionid'
 - `httponly`: true (not accessible via JavaScript for XSS protection)
 - `secure`: true (only sent over HTTPS)
 - `samesite`: 'Strict' (CSRF protection)
@@ -245,7 +233,7 @@ WHERE user_id = user_id;
 - Browser automatically deletes expired cookie
 - Frontend redirects to login page
 
-### Token Refresh Strategy
+### Session Management Strategy
 
 ```mermaid
 sequenceDiagram
@@ -253,7 +241,7 @@ sequenceDiagram
     participant Backend
     participant DB
 
-    Frontend->>Backend: API request with JWT
+    Frontend->>Backend: API request with session
     Backend->>Backend: Verify token
     
     alt Token expired
@@ -261,8 +249,8 @@ sequenceDiagram
         Frontend->>Backend: POST /api/auth/refresh<br/>(with refresh token)
         Backend->>DB: Verify refresh token
         DB-->>Backend: Valid
-        Backend->>Backend: Generate new JWT
-        Backend-->>Frontend: New JWT token
+        Backend->>Backend: Refresh session
+        Backend-->>Frontend: New Session
         Frontend->>Frontend: Update stored token
         Frontend->>Backend: Retry original request
     else Token valid

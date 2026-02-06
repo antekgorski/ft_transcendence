@@ -46,9 +46,9 @@ sequenceDiagram
     Note over User,DB: View Personal Game History
     
     User->>Frontend: Navigate to "My Games"
-    Frontend->>Backend: GET /api/games/history<br/>?page=1&limit=20<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: GET /api/games/history<br/>?page=1&limit=20<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get user_id
+    Backend->>Backend: Verify session<br/>Get user_id
     
     Backend->>Redis: Check cache<br/>GET games:history:{user_id}:page:1
     Redis-->>Backend: Cache miss
@@ -71,7 +71,7 @@ sequenceDiagram
     User->>Frontend: Select "Wins" filter
     Frontend->>Backend: GET /api/games/history<br/>?page=1&result=won
     
-    Backend->>Backend: Extract user_id from JWT
+    Backend->>Backend: Extract user_id from session
     
     Backend->>DB: SELECT ... FROM Game g<br/>WHERE (g.player_1_id = user_id<br/>       OR g.player_2_id = user_id)<br/>AND g.winner_id = user_id<br/>ORDER BY g.ended_at DESC<br/>LIMIT 20
     DB-->>Backend: Won games list
@@ -93,9 +93,9 @@ sequenceDiagram
     Note over User,DB: View Match Details
     
     User->>Frontend: Click on specific game
-    Frontend->>Backend: GET /api/games/{game_id}/details<br/>(JWT from cookie)
+    Frontend->>Backend: GET /api/games/{game_id}/details<br/>(Session cookie)
     
-    Backend->>Backend: Extract user_id from JWT
+    Backend->>Backend: Extract user_id from session
     
     Backend->>DB: SELECT g.*,<br/>p1.id as p1_id, p1.username as p1_name,<br/>p1.display_name as p1_display,<br/>p1.avatar_url as p1_avatar,<br/>p2.id as p2_id, p2.username as p2_name,<br/>p2.display_name as p2_display,<br/>p2.avatar_url as p2_avatar,<br/>winner.username as winner_name<br/>FROM Game g<br/>LEFT JOIN User p1 ON g.player_1_id = p1.id<br/>LEFT JOIN User p2 ON g.player_2_id = p2.id<br/>LEFT JOIN User winner ON g.winner_id = winner.id<br/>WHERE g.id = game_id
     DB-->>Backend: Game details
@@ -117,9 +117,9 @@ sequenceDiagram
     Note over User,DB: View Head-to-Head Statistics
     
     User->>Frontend: Click "View H2H" on opponent
-    Frontend->>Backend: GET /api/games/head-to-head/{opponent_id}<br/>(JWT from cookie)
+    Frontend->>Backend: GET /api/games/head-to-head/{opponent_id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract user_id from JWT
+    Backend->>Backend: Extract user_id from session
     
     Backend->>DB: SELECT<br/>  COUNT(*) as total_games,<br/>  COUNT(CASE WHEN winner_id = user_id<br/>             THEN 1 END) as user_wins,<br/>  COUNT(CASE WHEN winner_id = opponent_id<br/>             THEN 1 END) as opponent_wins,<br/>  AVG(duration_seconds) as avg_duration,<br/>  MAX(ended_at) as last_played<br/>FROM Game<br/>WHERE (player_1_id = user_id<br/>       AND player_2_id = opponent_id)<br/>   OR (player_1_id = opponent_id<br/>       AND player_2_id = user_id)
     DB-->>Backend: H2H statistics
@@ -140,7 +140,7 @@ sequenceDiagram
     User->>Frontend: Search for opponent "john"
     Frontend->>Backend: GET /api/games/history<br/>?search=john&page=1
     
-    Backend->>Backend: Extract user_id from JWT
+    Backend->>Backend: Extract user_id from session
     
     Backend->>DB: SELECT g.*, p1.username, p2.username<br/>FROM Game g<br/>LEFT JOIN User p1 ON g.player_1_id = p1.id<br/>LEFT JOIN User p2 ON g.player_2_id = p2.id<br/>WHERE (g.player_1_id = user_id<br/>       OR g.player_2_id = user_id)<br/>AND (p1.username ILIKE '%john%'<br/>     OR p2.username ILIKE '%john%')<br/>ORDER BY g.ended_at DESC<br/>LIMIT 20
     DB-->>Backend: Matching games
@@ -151,9 +151,9 @@ sequenceDiagram
     Note over User,DB: Export Game History
     
     User->>Frontend: Click "Export to CSV"
-    Frontend->>Backend: GET /api/games/history/export<br/>?format=csv<br/>(JWT from cookie)
+    Frontend->>Backend: GET /api/games/history/export<br/>?format=csv<br/>(Session cookie)
     
-    Backend->>Backend: Extract user_id from JWT
+    Backend->>Backend: Extract user_id from session
     
     Backend->>DB: SELECT all games for user<br/>(no pagination)
     DB-->>Backend: Complete game history
@@ -168,9 +168,9 @@ sequenceDiagram
     Note over User,DB: View Game Statistics Summary
     
     User->>Frontend: Navigate to "Statistics"
-    Frontend->>Backend: GET /api/games/statistics<br/>(JWT from cookie)
+    Frontend->>Backend: GET /api/games/statistics<br/>(Session cookie)
     
-    Backend->>Backend: Extract user_id from JWT
+    Backend->>Backend: Extract user_id from session
     
     Backend->>DB: SELECT<br/>  COUNT(*) as total_games,<br/>  COUNT(CASE WHEN winner_id = user_id<br/>             THEN 1 END) as wins,<br/>  COUNT(CASE WHEN winner_id != user_id<br/>             THEN 1 END) as losses,<br/>  AVG(duration_seconds) as avg_duration,<br/>  AVG(CASE<br/>    WHEN player_1_id = user_id<br/>    THEN (player_1_hits::float / player_1_shots) * 100<br/>    ELSE (player_2_hits::float / player_2_shots) * 100<br/>  END) as avg_accuracy,<br/>  COUNT(CASE WHEN game_type = 'pvp'<br/>             THEN 1 END) as pvp_games,<br/>  COUNT(CASE WHEN game_type = 'ai'<br/>             THEN 1 END) as ai_games<br/>FROM Game<br/>WHERE player_1_id = user_id<br/>   OR player_2_id = user_id
     DB-->>Backend: Aggregate statistics
@@ -194,7 +194,7 @@ sequenceDiagram
     User->>Frontend: Click opponent profile<br/>from match details
     Frontend->>Backend: GET /api/games/history<br/>?opponent={opponent_id}&page=1
     
-    Backend->>Backend: Extract user_id from JWT
+    Backend->>Backend: Extract user_id from session
     
     Backend->>DB: SELECT g.* FROM Game g<br/>WHERE ((player_1_id = user_id<br/>        AND player_2_id = opponent_id)<br/>    OR (player_1_id = opponent_id<br/>        AND player_2_id = user_id))<br/>ORDER BY ended_at DESC<br/>LIMIT 20
     DB-->>Backend: Games with specific opponent

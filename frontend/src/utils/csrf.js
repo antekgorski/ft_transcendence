@@ -32,7 +32,7 @@ export function getCsrfToken() {
  * @returns {Promise<void>}
  */
 export async function fetchCsrfToken() {
-  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
+  const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
   try {
     const response = await fetch(`${API_BASE_URL}/auth/me/`, {

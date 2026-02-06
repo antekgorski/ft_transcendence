@@ -15,9 +15,9 @@ sequenceDiagram
     Note over User1,User2: Send Friend Request
     
     User1->>Frontend1: Search for user & click "Add Friend"
-    Frontend1->>Backend: POST /api/friends/request<br/>{addressee_id}<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: POST /api/friends/request<br/>{addressee_id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get requester_id
+    Backend->>Backend: Verify session<br/>Get requester_id
     Backend->>Backend: Validate addressee_id exists
     
     Backend->>DB: Check if friendship exists
@@ -45,8 +45,8 @@ sequenceDiagram
     Note over User1,User2: Accept Friend Request
     
     User2->>Frontend2: View friend requests
-    Frontend2->>Backend: GET /api/friends/requests<br/>(JWT from HttpOnly cookie)
-    Backend->>Backend: Extract & verify JWT<br/>Get user_id
+    Frontend2->>Backend: GET /api/friends/requests<br/>(Session cookie)
+    Backend->>Backend: Verify session<br/>Get user_id
     
     Backend->>DB: SELECT Friendship WHERE<br/>addressee_id = user_id<br/>AND status = 'pending'
     DB-->>Backend: Pending requests list
@@ -58,9 +58,9 @@ sequenceDiagram
     Frontend2-->>User2: Display friend requests
     
     User2->>Frontend2: Click "Accept" on request
-    Frontend2->>Backend: PATCH /api/friends/{friendship_id}/accept<br/>(JWT from HttpOnly cookie)
+    Frontend2->>Backend: PATCH /api/friends/{friendship_id}/accept<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get user_id
+    Backend->>Backend: Verify session<br/>Get user_id
     
     Backend->>DB: SELECT Friendship<br/>WHERE id = friendship_id<br/>AND addressee_id = user_id
     DB-->>Backend: Friendship record
@@ -85,9 +85,9 @@ sequenceDiagram
     Note over User1,User2: Decline Friend Request
     
     User2->>Frontend2: Click "Decline" on request
-    Frontend2->>Backend: DELETE /api/friends/{friendship_id}<br/>(JWT from HttpOnly cookie)
+    Frontend2->>Backend: DELETE /api/friends/{friendship_id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get user_id
+    Backend->>Backend: Verify session<br/>Get user_id
     
     Backend->>DB: SELECT Friendship<br/>WHERE id = friendship_id<br/>AND addressee_id = user_id<br/>AND status = 'pending'
     DB-->>Backend: Friendship record
@@ -107,9 +107,9 @@ sequenceDiagram
     Note over User1,User2: Block User
     
     User1->>Frontend1: Click "Block User" on profile
-    Frontend1->>Backend: POST /api/friends/block<br/>{blocked_user_id}<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: POST /api/friends/block<br/>{blocked_user_id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get blocker_id
+    Backend->>Backend: Verify session<br/>Get blocker_id
     
     Backend->>DB: Check if friendship exists
     DB-->>Backend: Friendship record or NULL
@@ -133,8 +133,8 @@ sequenceDiagram
     Note over User1,User2: Unblock User
     
     User1->>Frontend1: View blocked users list
-    Frontend1->>Backend: GET /api/friends/blocked<br/>(JWT from HttpOnly cookie)
-    Backend->>Backend: Extract & verify JWT
+    Frontend1->>Backend: GET /api/friends/blocked<br/>(Session cookie)
+    Backend->>Backend: Verify session
     
     Backend->>DB: SELECT Friendship WHERE<br/>(requester_id = user_id OR addressee_id = user_id)<br/>AND status = 'blocked'
     DB-->>Backend: Blocked users list
@@ -143,9 +143,9 @@ sequenceDiagram
     Frontend1-->>User1: Display blocked list
     
     User1->>Frontend1: Click "Unblock" on user
-    Frontend1->>Backend: DELETE /api/friends/{friendship_id}<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: DELETE /api/friends/{friendship_id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT
+    Backend->>Backend: Verify session
     
     Backend->>DB: DELETE FROM Friendship<br/>WHERE id = friendship_id<br/>AND (requester_id = user_id OR addressee_id = user_id)<br/>AND status = 'blocked'
     DB-->>Backend: Deleted
@@ -160,9 +160,9 @@ sequenceDiagram
     Frontend1->>Frontend1: Show confirmation dialog
     User1->>Frontend1: Confirm removal
     
-    Frontend1->>Backend: DELETE /api/friends/{friendship_id}<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: DELETE /api/friends/{friendship_id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get user_id
+    Backend->>Backend: Verify session<br/>Get user_id
     
     Backend->>DB: DELETE FROM Friendship<br/>WHERE id = friendship_id<br/>AND (requester_id = user_id OR addressee_id = user_id)<br/>AND status = 'accepted'
     DB-->>Backend: Deleted
@@ -207,7 +207,7 @@ sequenceDiagram
 ### Backend Responsibilities
 
 1. **Request Validation**
-   - Verify JWT token for all operations
+   - Verify session for all operations
    - Prevent self-friending
    - Check for duplicate requests
    - Ensure user can only manage their own friendships
@@ -362,7 +362,7 @@ WHERE f.requester_id = current_user_id
 
 ## Security Considerations
 
-1. **JWT Cookie Authentication**: All requests authenticated via HttpOnly cookies
+1. **Session Cookie Authentication**: All requests authenticated via HttpOnly cookies
 2. **Authorization Checks**: 
    - Only addressee can accept/decline requests
    - Only requester can cancel pending requests
