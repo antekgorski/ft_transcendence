@@ -122,6 +122,12 @@ function Body({ onNavigate }) {
 
   // Funkcja umieszczająca statek na planszy gracza.
   const placeShip = (row, col) => {
+    // Sprawdzamy czy możemy jeszcze rozstawić statek tego rozmiaru.
+    if (!canPlaceMoreShipsOfSize(selectedShipSize)) {
+      // Jeśli limit osiągnięty, ustawiamy komunikat i kończymy.
+      setStatusMessage(`No more ships of size ${selectedShipSize} available.`);
+      return;
+    }
     // Tworzymy kopię planszy, aby nie modyfikować stanu bezpośrednio.
     const newBoard = playerBoard.map((r) => r.slice());
     // Sprawdzamy czy można umieścić statek.
@@ -131,20 +137,38 @@ function Body({ onNavigate }) {
       setStatusMessage('Cannot place ship here.');
       return;
     }
+    // Przygotowujemy listę komórek statku do zapisania w state.
+    const shipCells = [];
     // Jeśli orientacja pozioma, wypełniamy odpowiednie pola.
     if (orientation === 'horizontal') {
       // Iterujemy po długości statku.
       for (let c = col; c < col + selectedShipSize; c += 1) {
         // Ustawiamy pole jako SHIP.
         newBoard[row][c] = CELL_TYPES.SHIP;
+        // Dodajemy komórkę statku do listy.
+        shipCells.push([row, c]);
       }
     } else {
       // Dla orientacji pionowej wypełniamy pola w dół.
       for (let r = row; r < row + selectedShipSize; r += 1) {
         // Ustawiamy pole jako SHIP.
         newBoard[r][col] = CELL_TYPES.SHIP;
+        // Dodajemy komórkę statku do listy.
+        shipCells.push([r, col]);
       }
     }
+    // Dodajemy dane statku do listy rozstawionych statków.
+    setPlacedShipsData((prev) => [
+      ...prev,
+      {
+        // Rozmiar statku.
+        size: selectedShipSize,
+        // Komórki zajmowane przez statek.
+        cells: shipCells,
+        // Orientacja statku.
+        orientation,
+      },
+    ]);
     // Aktualizujemy stan planszy gracza.
     setPlayerBoard(newBoard);
     // Aktualizujemy status.
