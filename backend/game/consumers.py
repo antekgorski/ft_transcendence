@@ -788,6 +788,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             winner_user = User.objects.get(id=winner_id)
             game.winner = winner_user
         except User.DoesNotExist:
+            # Winner user record may have been deleted; in that case we
+            # finalize the game without setting a winner relation.
             pass
         game.ended_at = timezone.now()
         if game.started_at:
