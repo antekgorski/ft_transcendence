@@ -269,6 +269,69 @@ function Body({ onNavigate }) {
 
       {/* Tytuł strony */}
       <h1 className="text-3xl font-bold text-center mb-6">Battleship — Game Board</h1>
+      
+        {/* Sekcja lobby - wybór trybu gry */}
+        {gamePhase === 'lobby' && (
+          // Kontener lobby.
+          <div className="max-w-3xl mx-auto mb-6 bg-slate-800/60 p-4 rounded-lg">
+            {/* Nagłówek lobby */}
+            <h2 className="text-xl font-semibold mb-3">Choose Game Mode</h2>
+
+            {/* Opis */}
+            <p className="text-slate-300 mb-4">
+              Select how you want to play. You can start a match against AI or challenge a friend.
+            </p>
+
+            {/* Przyciski wyboru trybu */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              {/* Przycisk gry z AI */}
+              <button
+                className={`px-4 py-2 rounded ${gameType === 'ai' ? 'bg-emerald-600' : 'bg-slate-700 hover:bg-slate-600'}`}
+                onClick={() => {
+                  // Ustawiamy typ gry na AI.
+                  setGameType('ai');
+                  // Ustawiamy komunikat statusu.
+                  setStatusMessage('AI mode selected.');
+                }}
+              >
+                Play vs AI
+              </button>
+
+              {/* Przycisk gry PvP */}
+              <button
+                className={`px-4 py-2 rounded ${gameType === 'pvp' ? 'bg-emerald-600' : 'bg-slate-700 hover:bg-slate-600'}`}
+                onClick={() => {
+                  // Ustawiamy typ gry na PvP.
+                  setGameType('pvp');
+                  // Ustawiamy komunikat statusu.
+                  setStatusMessage('PvP mode selected.');
+                }}
+              >
+                Play vs Friend
+              </button>
+            </div>
+
+            {/* Pole na ID przeciwnika (tylko PvP) */}
+            {gameType === 'pvp' && (
+              // Kontener inputu.
+              <div className="mt-4">
+                {/* Label */}
+                <label className="block text-sm text-slate-300 mb-1">Opponent ID</label>
+                {/* Input */}
+                <input
+                  type="text"
+                  value={opponentId || ''}
+                  onChange={(e) => {
+                    // Ustawiamy ID przeciwnika.
+                    setOpponentId(e.target.value);
+                  }}
+                  placeholder="Paste opponent UUID here"
+                  className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Panel sterowania */}
       <div className="max-w-5xl mx-auto mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between">
