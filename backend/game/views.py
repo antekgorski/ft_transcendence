@@ -433,8 +433,30 @@ class GameViewSet(viewsets.ModelViewSet):
                 'display_name': 'AI Opponent',
                 'avatar_url': 'avatars/avatar_1.jpg',
                 'is_active': True,
+                # Mark AI account as staff to distinguish it from regular users
+                'is_staff': True,
+                'is_superuser': False,
             }
         )
+
+        # Verify that the retrieved user is the expected dedicated AI account
+        expected_username = 'ai_opponent'
+        expected_email = 'ai@system.local'
+        if (
+            ai_user.username != expected_username
+            or ai_user.email != expected_email
+            or not ai_user.is_staff
+        ):
+            logger.error(
+                "AI user lookup returned an unexpected account (id=%s, username=%s). "
+                "Refusing to use it as AI opponent.",
+                ai_user.id,
+                ai_user.username,
+            )
+            return Response(
+                {'error': 'AI opponent account is misconfigured'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         
         # Set an unusable password for AI user if just created to prevent login with a static password
         if created:
