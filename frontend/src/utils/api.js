@@ -25,7 +25,8 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     // Add CSRF token to POST, PUT, PATCH, DELETE requests
-    if (['post', 'put', 'patch', 'delete'].includes(config.method.toLowerCase())) {
+    const method = (config.method || 'get').toLowerCase();
+    if (['post', 'put', 'patch', 'delete'].includes(method)) {
       const csrfToken = getCsrfToken();
       if (csrfToken) {
         config.headers['X-CSRFToken'] = csrfToken;

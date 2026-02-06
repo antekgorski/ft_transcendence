@@ -555,10 +555,12 @@ function Body() {
               window.shotTimeoutId = null;
             }
             
-            const newEnemyBoard = enemyBoard.map((r) => r.slice());
-            newEnemyBoard[row][col] = result === 'hit' ? CELL_TYPES.HIT : CELL_TYPES.MISS;
-            const nextEnemyBoard = applyInactiveCells(newEnemyBoard, inactive);
-            setEnemyBoard(nextEnemyBoard);
+            // Use functional setState to avoid stale closure when multiple messages arrive quickly
+            setEnemyBoard(prev => {
+              const newEnemyBoard = prev.map((r) => r.slice());
+              newEnemyBoard[row][col] = result === 'hit' ? CELL_TYPES.HIT : CELL_TYPES.MISS;
+              return applyInactiveCells(newEnemyBoard, inactive);
+            });
             
             // Add to shot history
             setShotHistory(prev => [...prev, {

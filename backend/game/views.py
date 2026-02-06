@@ -180,6 +180,11 @@ class GameViewSet(viewsets.ModelViewSet):
                 ships_found.append(ship_coords)
                 used.update(ship_coords)
         
+        # Check that no ships are adjacent to each other (including diagonally)
+        is_valid, error_msg = self._check_ships_adjacent(ships_found)
+        if not is_valid:
+            return False, error_msg
+        
         # Verify we found the right number and sizes of ships
         found_sizes = sorted([len(ship) for ship in ships_found], reverse=True)
         expected_sizes = sorted([4, 3, 3, 2, 2, 2, 1, 1, 1, 1], reverse=True)
@@ -229,6 +234,36 @@ class GameViewSet(viewsets.ModelViewSet):
             return h_ship
         
         return None
+    
+    def _check_ships_adjacent(self, ships):
+        """Check if any two cells from different ships are adjacent (including diagonally).
+        
+        Args:
+            ships: List of ships, where each ship is a list of (x, y) tuples
+        
+        Returns: (is_valid: bool, error_message: str or None)
+        """
+        # Create a mapping of all positions to their ship index
+        all_positions = {}
+        for ship_idx, ship_coords in enumerate(ships):
+            for coord in ship_coords:
+                all_positions[coord] = ship_idx
+        
+        # Check all 8 adjacent directions (orthogonal and diagonal)
+        directions = [
+            (-1, -1), (-1, 0), (-1, 1),
+            (0, -1),           (0, 1),
+            (1, -1),  (1, 0),  (1, 1)
+        ]
+        
+        # For each cell, check if any adjacent cell belongs to a different ship
+        for (x, y), ship_idx in all_positions.items():
+            for dx, dy in directions:
+                adjacent_pos = (x + dx, y + dy)
+                if adjacent_pos in all_positions and all_positions[adjacent_pos] != ship_idx:
+                    return False, "Ships cannot be placed adjacent to each other (including diagonally)"
+        
+        return True, None
     
     def _check_ship_overlaps(self, existing_ships, new_positions):
         """Check if new ship overlaps with existing ships.

@@ -6,6 +6,7 @@ class GameSocket {
   constructor() {
     this.socket = null;
     this.gameId = null;
+    this.pendingGameId = null;
     this.messageHandlers = {};
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
@@ -29,19 +30,23 @@ class GameSocket {
       this.socket = null;
     }
     
-    // If already connected to this game, just return
+    // If already connected or connecting to this game, handle appropriately
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
-      // But send join message again to re-join after reload
       if (this.socket.readyState === WebSocket.OPEN) {
+        // Socket is open, send join immediately
         this.send({
           type: 'join',
           game_id: gameId,
         });
+      } else {
+        // Socket is still CONNECTING, queue the gameId to join when it opens
+        this.pendingGameId = gameId;
       }
       return;
     }
 
     this.gameId = gameId;
+    this.pendingGameId = null;
     // Use relative WebSocket URL that works through nginx proxy
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/games/`;
@@ -55,7 +60,7 @@ class GameSocket {
         }
         this.reconnectAttempts = 0;
         
-        // Send join message
+        // Send join message for the requested game
         this.send({
           type: 'join',
           game_id: gameId,
@@ -121,6 +126,16 @@ class GameSocket {
       this.socket.onopen = () => {
         this.reconnectAttempts = 0;
         this.startHeartbeat();
+
+        // If a gameId was queued while connecting, join it now
+        if (this.pendingGameId) {
+          this.gameId = this.pendingGameId;
+          this.pendingGameId = null;
+          this.send({
+            type: 'join',
+            game_id: this.gameId,
+          });
+        }
       };
 
       this.socket.onmessage = (event) => {
