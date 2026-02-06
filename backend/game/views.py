@@ -1022,8 +1022,9 @@ class GameViewSet(viewsets.ModelViewSet):
                 if player_1_stats.current_win_streak > player_1_stats.longest_win_streak:
                     player_1_stats.longest_win_streak = player_1_stats.current_win_streak
                 # Track fastest win (shortest game duration for wins only)
-                if game.duration_seconds < player_1_stats.best_game_duration_seconds or player_1_stats.best_game_duration_seconds == 0:
-                    player_1_stats.best_game_duration_seconds = game.duration_seconds
+                normalized_duration = max(1, game.duration_seconds)
+                if normalized_duration < player_1_stats.best_game_duration_seconds or player_1_stats.best_game_duration_seconds == 0:
+                    player_1_stats.best_game_duration_seconds = normalized_duration
             else:
                 player_1_stats.games_lost += 1
                 player_1_stats.current_win_streak = 0
