@@ -176,3 +176,44 @@ class LeaderboardSerializer(serializers.Serializer):
     games_won = serializers.IntegerField()
     win_rate = serializers.FloatField()
     accuracy_percentage = serializers.FloatField()
+
+
+class GameHistoryEntrySerializer(serializers.Serializer):
+    """Serializer for a single entry in user's game history."""
+    id = serializers.UUIDField()
+    game_type = serializers.CharField()
+    status = serializers.CharField()
+    started_at = serializers.DateTimeField(allow_null=True)
+    ended_at = serializers.DateTimeField(allow_null=True)
+    duration_seconds = serializers.IntegerField(allow_null=True)
+    result_for_user = serializers.CharField()
+    user_accuracy = serializers.FloatField(allow_null=True)
+    opponent_accuracy = serializers.FloatField(allow_null=True)
+    opponent = UserSimpleSerializer(allow_null=True)
+
+
+class GameDetailsPlayerSerializer(serializers.Serializer):
+    """Serializer for per-player details in match details."""
+    id = serializers.UUIDField(allow_null=True)
+    username = serializers.CharField(allow_null=True)
+    display_name = serializers.CharField(allow_null=True)
+    avatar_url = serializers.CharField(allow_null=True)
+    shots = serializers.IntegerField()
+    hits = serializers.IntegerField()
+    accuracy = serializers.FloatField(allow_null=True)
+    is_current_user = serializers.BooleanField()
+
+
+class GameDetailsSerializer(serializers.Serializer):
+    """Serializer for detailed information about a single game for a user."""
+    game_id = serializers.UUIDField()
+    game_type = serializers.CharField()
+    started_at = serializers.DateTimeField()
+    ended_at = serializers.DateTimeField(allow_null=True)
+    duration_seconds = serializers.IntegerField(allow_null=True)
+    duration_formatted = serializers.CharField()
+    winner = UserSimpleSerializer(allow_null=True)
+    player_1 = GameDetailsPlayerSerializer()
+    player_2 = GameDetailsPlayerSerializer(allow_null=True)
+    result_for_user = serializers.CharField()
+

@@ -11,6 +11,8 @@ from .serializers import (
     GameCreateSerializer,
     GameEndSerializer,
     LeaderboardSerializer,
+    GameHistoryEntrySerializer,
+    GameDetailsSerializer,
 )
 from authentication.models import User
 from social.models import Friendship
@@ -54,6 +56,100 @@ class GameViewSet(viewsets.ModelViewSet):
         return Game.objects.filter(
             Q(player_1_id=user_id) | Q(player_2_id=user_id)
         ).order_by('-started_at')
+
+    @action(detail=False, methods=['get'])
+    def history(self, request):
+        """Return paginated game history for the current user.
+
+        Query params:
+        - page: page number (default: 1)
+        - limit: page size (default: 20, max: 100)
+        - result: optional filter 'won' | 'lost'
+        - game_type: optional filter 'pvp' | 'ai'
+        """
+        user = request.user
+
+        try:
+            page = int(request.query_params.get('page', 1))
+        except (TypeError, ValueError):
+            page = 1
+
+        try:
+            limit = int(request.query_params.get('limit', 20))
+        except (TypeError, ValueError):
+            limit = 20
+
+        if limit > 100:
+            limit = 100
+        if page < 1:
+            page = 1
+
+        queryset = Game.objects.filter(
+            Q(player_1=user) | Q(player_2=user)
+        ).select_related('player_1', 'player_2', 'winner').order_by('-ended_at', '-started_at')
+
+        # Optional filters
+        result_filter = request.query_params.get('result')
+        if result_filter == 'won':
+            queryset = queryset.filter(winner=user)
+        elif result_filter == 'lost':
+            queryset = queryset.exclude(winner__isnull=True).exclude(winner=user)
+
+        game_type = request.query_params.get('game_type')
+        if game_type in ['pvp', 'ai']:
+            queryset = queryset.filter(game_type=game_type)
+
+        total = queryset.count()
+        offset = (page - 1) * limit
+        games = list(queryset[offset:offset + limit])
+
+        history_entries = []
+        for game in games:
+            # Determine perspective (current user vs opponent)
+            if game.player_1_id == user.id:
+                user_shots = game.player_1_shots
+                user_hits = game.player_1_hits
+                opp_shots = game.player_2_shots
+                opp_hits = game.player_2_hits
+                opponent = game.player_2
+            else:
+                user_shots = game.player_2_shots
+                user_hits = game.player_2_hits
+                opp_shots = game.player_1_shots
+                opp_hits = game.player_1_hits
+                opponent = game.player_1
+
+            if game.winner_id == user.id:
+                result_for_user = 'won'
+            elif game.winner_id is None:
+                result_for_user = 'pending' if game.status in ['pending', 'active'] else 'unknown'
+            else:
+                result_for_user = 'lost'
+
+            user_accuracy = (user_hits / user_shots * 100) if user_shots > 0 else None
+            opponent_accuracy = (opp_hits / opp_shots * 100) if opp_shots > 0 else None
+
+            history_entries.append({
+                'id': game.id,
+                'game_type': game.game_type,
+                'status': game.status,
+                'started_at': game.started_at,
+                'ended_at': game.ended_at,
+                'duration_seconds': game.duration_seconds,
+                'result_for_user': result_for_user,
+                'user_accuracy': user_accuracy,
+                'opponent_accuracy': opponent_accuracy,
+                'opponent': opponent,
+            })
+
+        serializer = GameHistoryEntrySerializer(history_entries, many=True)
+
+        return Response({
+            'games': serializer.data,
+            'total': total,
+            'page': page,
+            'has_more': offset + len(history_entries) < total,
+        })
     
     @action(detail=False, methods=['get'])
     def active(self, request):
@@ -104,6 +200,97 @@ class GameViewSet(viewsets.ModelViewSet):
             })
         
         serializer = LeaderboardSerializer(leaderboard_data, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def details(self, request, id=None):
+        """Return detailed information about a specific game for the current user."""
+        try:
+            game = Game.objects.select_related('player_1', 'player_2', 'winner').get(id=id)
+        except Game.DoesNotExist:
+            return Response(
+                {'error': 'Game not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        user = request.user
+
+        # Verify user is participant
+        if game.player_1_id != user.id and game.player_2_id != user.id:
+            return Response(
+                {'error': 'User not in this game'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Determine result from user's perspective
+        if game.winner_id == user.id:
+            result_for_user = 'won'
+        elif game.winner_id is None:
+            result_for_user = 'pending' if game.status in ['pending', 'active'] else 'unknown'
+        else:
+            result_for_user = 'lost'
+
+        # Helper to build player details
+        def build_player(player_obj, shots, hits, is_current):
+            accuracy = (hits / shots * 100) if shots and shots > 0 else None
+            if player_obj is None:
+                # For AI games player_2 might be None in DB
+                return {
+                    'id': None,
+                    'username': 'AI' if game.game_type == 'ai' else None,
+                    'display_name': None,
+                    'avatar_url': None,
+                    'shots': shots,
+                    'hits': hits,
+                    'accuracy': accuracy,
+                    'is_current_user': is_current,
+                }
+            return {
+                'id': player_obj.id,
+                'username': player_obj.username,
+                'display_name': getattr(player_obj, 'display_name', None),
+                'avatar_url': getattr(player_obj, 'avatar_url', None),
+                'shots': shots,
+                'hits': hits,
+                'accuracy': accuracy,
+                'is_current_user': is_current,
+            }
+
+        player_1_data = build_player(
+            game.player_1,
+            game.player_1_shots,
+            game.player_1_hits,
+            game.player_1_id == user.id,
+        )
+        player_2_data = build_player(
+            game.player_2,
+            game.player_2_shots,
+            game.player_2_hits,
+            game.player_2_id == user.id if game.player_2_id else False,
+        )
+
+        # Duration formatted as Xm Ys
+        if game.duration_seconds is not None:
+            minutes = game.duration_seconds // 60
+            seconds = game.duration_seconds % 60
+            duration_formatted = f"{minutes}m {seconds}s"
+        else:
+            duration_formatted = 'N/A'
+
+        details_payload = {
+            'game_id': game.id,
+            'game_type': game.game_type,
+            'started_at': game.started_at,
+            'ended_at': game.ended_at,
+            'duration_seconds': game.duration_seconds,
+            'duration_formatted': duration_formatted,
+            'winner': game.winner,
+            'player_1': player_1_data,
+            'player_2': player_2_data,
+            'result_for_user': result_for_user,
+        }
+
+        serializer = GameDetailsSerializer(details_payload)
         return Response(serializer.data)
     
     def create(self, request):
