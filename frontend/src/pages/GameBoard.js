@@ -65,7 +65,7 @@ function Body() {
   const [placedShips, setPlacedShips] = useState([]);
   
   // Stan dla drag and drop
-  const [draggedShip, setDraggedShip] = useState(null);
+  const [, setDraggedShip] = useState(null);
   const [hoverCell, setHoverCell] = useState(null);
   const [dragRestore, setDragRestore] = useState(null);
   const dragBaseRef = useRef(null);
