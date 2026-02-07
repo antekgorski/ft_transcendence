@@ -427,6 +427,121 @@ function Body({ onNavigate }) {
     };
   }, []);
 
+  // Efekt do rejestracji handlerów WebSocket
+  useEffect(() => {
+    // Tylko jeśli WebSocket jest podłączony
+    if (!gameApi.isConnected()) {
+      return;
+    }
+
+    // Handler dla wiadomości game_move
+    // Ta wiadomość oznacza że gracz oddał strzał (mój lub przeciwnika)
+    const unsubscribeGameMove = gameApi.on('game_move', (data) => {
+      console.log('Received game_move:', data);
+      
+      // data = {
+      //   type: 'game_move',
+      //   player_id: 'uuid',
+      //   move_type: 'shoot',
+      //   data: { row: X, col: Y }
+      // }
+      
+      // Sprawdzamy czy to mój strzał czy przeciwnika
+      // Jeśli move_type to 'shoot', to oznacza że ktoś oddał strzał
+      if (data.move_type === 'shoot') {
+        const { row, col } = data.data || {};
+        
+        // Tutaj będziemy obsługiwać rezultat strzału z backendu
+        // Na razie tylko pokazujemy że otrzymaliśmy wiadomość
+        setStatusMessage(`Shot received at row=${row}, col=${col}`);
+        
+        // TODO w następnej fazie: dodać logikę do aktualizacji planszy
+        // i wysyłania rezultatu trafienia/pudła
+      }
+    });
+
+    // Handler dla wiadomości z rezultatem strzału
+    // Backend wysyła to aby poinformować gracza czy jego strzał trafił
+    const unsubscribeGameMoveResult = gameApi.on('game_move_result', (data) => {
+      console.log('Received game_move_result:', data);
+      
+      // data = {
+      //   type: 'game_move_result',
+      //   row: X,
+      //   col: Y,
+      //   result: 'hit' | 'miss' | 'sunk',
+      //   ship_sunk: true/false (jeśli hit),
+      //   player_turn_now: 'player_1_id' | 'player_2_id'
+      // }
+      
+      const { row, col, result, ship_sunk } = data;
+      
+      // Aktualizujemy planszę przeciwnika na podstawie rezultatu
+      if (row !== undefined && col !== undefined) {
+        const newEnemyBoard = enemyBoard.map((r) => r.slice());
+        
+        if (result === 'hit') {
+          newEnemyBoard[row][col] = CELL_TYPES.HIT;
+          const hitMessage = ship_sunk ? `Hit and SUNK! at ${row + 1}, ${col + 1}` : `Hit at ${row + 1}, ${col + 1}!`;
+          setStatusMessage(hitMessage);
+        } else if (result === 'miss') {
+          newEnemyBoard[row][col] = CELL_TYPES.MISS;
+          setStatusMessage(`Miss at ${row + 1}, ${col + 1}!`);
+        }
+        
+        setEnemyBoard(newEnemyBoard);
+      }
+      
+      // Aktualizujemy turę - jeśli `player_turn_now` jest naszym ID, to nasza tura
+      // TODO w następnej fazie: zaimplementować logikę turn_changed
+    });
+
+    // Handler dla turn_changed
+    const unsubscribeTurnChanged = gameApi.on('turn_changed', (data) => {
+      console.log('Received turn_changed:', data);
+      
+      // data = {
+      //   type: 'turn_changed',
+      //   current_player_id: 'uuid'
+      // }
+      
+      // TODO w następnej fazie: zaimplementować
+      // const { current_player_id } = data;
+      // setIsMyTurn(/* sprawdzenie czy current_player_id to my */);
+    });
+
+    // Handler dla game_forfeit
+    const unsubscribeGameForfeit = gameApi.on('game_forfeit', (data) => {
+      console.log('Opponent forfeited:', data);
+      setStatusMessage('Opponent has forfeited! You win!');
+      setGamePhase('end');
+    });
+
+    // Handler dla game_ended
+    const unsubscribeGameEnded = gameApi.on('game_ended', (data) => {
+      console.log('Game ended:', data);
+      const { winner_id, reason } = data;
+      setGamePhase('end');
+      setStatusMessage(`Game ended: ${reason}. Winner: ${winner_id}`);
+    });
+
+    // Handler dla error
+    const unsubscribeError = gameApi.on('error', (data) => {
+      console.error('WebSocket error:', data);
+      setStatusMessage(`Server error: ${data.message}`);
+    });
+
+    // Cleanup - unsubscribe ze wszystkich handlerów
+    return () => {
+      unsubscribeGameMove();
+      unsubscribeGameMoveResult();
+      unsubscribeTurnChanged();
+      unsubscribeGameForfeit();
+      unsubscribeGameEnded();
+      unsubscribeError();
+    };
+  }, [gameApi, enemyBoard]);
+
   // Funkcja zwracająca klasę Tailwind dla danego typu pola.
   const getCellClass = (cellType, isEnemy) => {
     // Klasy bazowe dla wszystkich pól.
