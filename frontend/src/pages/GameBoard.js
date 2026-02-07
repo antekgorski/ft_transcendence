@@ -221,17 +221,47 @@ function Body({ onNavigate }) {
     try {
       // Ustawiamy status.
       setStatusMessage('Sending ships to server...');
+      
+      // Sprawdzamy czy mamy dane statków
+      if (!placedShipsData || placedShipsData.length === 0) {
+        setStatusMessage('No ships to place. Please place ships first.');
+        return;
+      }
+
       // Wysyłamy statki do backendu.
-      await gameApi.placeShips(gameId, placedShipsData);
+      const response = await gameApi.placeShips(gameId, placedShipsData);
+      console.log('Ships placed successfully:', response);
+
       // Kończymy fazę rozmieszczania.
       setIsPlacingShips(false);
+      
+      // Podłączamy do WebSocket aby odebrać updaty z backendu
+      try {
+        console.log('Connecting to WebSocket for game:', gameId);
+        await gameApi.connectWebSocket(gameId);
+        console.log('WebSocket connected successfully');
+      } catch (wsError) {
+        console.error('WebSocket connection failed:', wsError);
+        setStatusMessage('WebSocket connection failed. Game updates may be delayed.');
+      }
+
       // Przechodzimy do fazy oczekiwania.
       setGamePhase('waiting');
+      
       // Aktualizujemy status.
-      setStatusMessage('Waiting for opponent to place ships...');
+      if (gameType === 'ai') {
+        // Dla gry z AI, przeciwnik (AI) powinien być zawsze gotowy
+        setStatusMessage('AI opponent ready. Starting game...');
+        setGamePhase('playing');
+      } else {
+        setStatusMessage('Waiting for opponent to place ships...');
+      }
     } catch (error) {
       // Obsługujemy błąd.
+      console.error('Error placing ships:', error);
       setStatusMessage(`Failed to place ships: ${error.message}`);
+      // Re-enable ship placement na wypadek błędu
+      setIsPlacingShips(true);
     }
   };
 
@@ -332,6 +362,17 @@ function Body({ onNavigate }) {
     // Czyścimy interval przy odmontowaniu lub zmianie zależności.
     return () => clearInterval(intervalId);
   }, [gamePhase, gameId, gameType]);
+
+  // Efekt do cleanup WebSocket przy unmount komponentu
+  useEffect(() => {
+    // Cleanup function - zamykamy WebSocket przy opuszczeniu komponentu
+    return () => {
+      if (gameApi.isConnected()) {
+        console.log('Component unmounting - disconnecting WebSocket');
+        gameApi.disconnectWebSocket();
+      }
+    };
+  }, []);
 
   // Funkcja zwracająca klasę Tailwind dla danego typu pola.
   const getCellClass = (cellType, isEnemy) => {
