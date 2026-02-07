@@ -58,9 +58,9 @@ sequenceDiagram
     Note over User,DB: View Global Leaderboard
     
     User->>Frontend: Navigate to Leaderboard
-    Frontend->>Backend: GET /api/leaderboard/global<br/>?page=1&limit=50<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: GET /api/leaderboard/global<br/>?page=1&limit=50<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>(optional - public view)
+    Backend->>Backend: Verify session<br/>(optional - public view)
     
     Backend->>Redis: Check cache<br/>GET leaderboard:global:page:1
     Redis-->>Backend: Cache hit or miss
@@ -86,9 +86,9 @@ sequenceDiagram
     Note over User,DB: View Friends Leaderboard
     
     User->>Frontend: Click "Friends Only" tab
-    Frontend->>Backend: GET /api/leaderboard/friends<br/>?page=1&limit=50<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: GET /api/leaderboard/friends<br/>?page=1&limit=50<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get user_id
+    Backend->>Backend: Verify session<br/>Get user_id
     
     Backend->>Redis: Check cache<br/>GET leaderboard:friends:{user_id}:page:1
     Redis-->>Backend: Cache miss
@@ -128,7 +128,7 @@ sequenceDiagram
     Note over User,DB: Search for User on Leaderboard
     
     User->>Frontend: Search for username
-    Frontend->>Backend: GET /api/leaderboard/search<br/>?username=player123<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: GET /api/leaderboard/search<br/>?username=player123<br/>(Session cookie)
     
     Backend->>DB: SELECT u.id, u.username, u.avatar_url,<br/>ps.games_won, ps.accuracy_percentage,<br/>(SELECT COUNT(*) + 1<br/> FROM PlayerStats ps2<br/> WHERE ps2.games_won > ps.games_won) as rank<br/>FROM PlayerStats ps<br/>JOIN User u ON u.id = ps.user_id<br/>WHERE u.username ILIKE '%player123%'<br/>LIMIT 10
     DB-->>Backend: Search results with ranks
@@ -139,9 +139,9 @@ sequenceDiagram
     Note over User,DB: View Personal Stats & Rank
     
     User->>Frontend: Click profile
-    Frontend->>Backend: GET /api/stats/me<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: GET /api/stats/me<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get user_id
+    Backend->>Backend: Verify session<br/>Get user_id
     
     Backend->>DB: SELECT ps.*,<br/>(SELECT COUNT(*) + 1<br/> FROM PlayerStats ps2<br/> WHERE ps2.games_won > ps.games_won<br/> OR (ps2.games_won = ps.games_won<br/>     AND ps2.accuracy_percentage > ps.accuracy_percentage))<br/>as global_rank,<br/>(SELECT COUNT(*) FROM PlayerStats) as total_players<br/>FROM PlayerStats ps<br/>WHERE ps.user_id = user_id
     DB-->>Backend: Stats with rank

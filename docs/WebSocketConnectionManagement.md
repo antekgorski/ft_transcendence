@@ -14,18 +14,18 @@ sequenceDiagram
     Note over User,DB: Initial Connection & Authentication
     
     User->>Frontend: Login successful
-    Frontend->>Frontend: JWT cookie received
+    Frontend->>Frontend: Session cookie received
     Frontend->>Frontend: Initialize WebSocket client
     
-    Frontend->>WS: Connect to wss://domain/ws/<br/>(Send JWT from cookie)
-    WS->>WS: Extract JWT from cookie
-    WS->>WS: Verify JWT signature & expiration
+    Frontend->>WS: Connect to wss://domain/ws/<br/>(Send session cookie)
+    WS->>WS: Extract session from cookie
+    WS->>WS: Verify session validity
     
-    alt JWT invalid or expired
+    alt Session invalid or expired
         WS-->>Frontend: Close connection<br/>(4401: Unauthorized)
         Frontend->>Frontend: Redirect to login
         Frontend-->>User: Show "Session expired"
-    else JWT valid
+    else Session valid
         WS->>Backend: Validate user_id from token
         Backend->>DB: SELECT User WHERE id = user_id<br/>AND is_active = TRUE
         DB-->>Backend: User record
@@ -113,7 +113,7 @@ sequenceDiagram
     Frontend->>WS: Reconnect attempt
     
     alt Reconnection successful
-        WS->>WS: Authenticate JWT
+        WS->>WS: Authenticate session
         WS->>Redis: SET user:{user_id}:online = true
         Redis-->>WS: Updated
         
@@ -140,18 +140,18 @@ sequenceDiagram
 
     Note over User,DB: Session Expiry During Connection
     
-    WS->>WS: JWT expiration detected<br/>(during heartbeat or event)
-    WS-->>Frontend: Close connection<br/>(4401: Token expired)
+    WS->>WS: Session expiration detected<br/>(during heartbeat or event)
+    WS-->>Frontend: Close connection<br/>(4401: Session expired)
     
     Frontend->>Frontend: Clear WebSocket state
-    Frontend->>Backend: Attempt token refresh<br/>POST /api/auth/refresh
+    Frontend->>Backend: Check session validity<br/>GET /api/auth/me
     
-    alt Refresh successful
-        Backend-->>Frontend: New JWT cookie
-        Frontend->>WS: Reconnect with new JWT
+    alt Session still valid
+        Backend-->>Frontend: Session refreshed
+        Frontend->>WS: Reconnect with session cookie
         WS-->>Frontend: Connection established
         Frontend-->>User: Seamless continuation
-    else Refresh failed
+    else Session expired
         Frontend->>Frontend: Redirect to login page
         Frontend-->>User: Show "Session expired, please login"
     end
@@ -270,7 +270,7 @@ user:{user_id}:connections = ["channel_name_1", "channel_name_2"]
 
 **Connection Management**:
 - Establish secure WSS connection to backend
-- Extract and send JWT from HttpOnly cookie automatically
+- Extract and send session cookie automatically
 - Handle connection lifecycle events (open, close, error)
 - Implement event handler registration system
 
@@ -303,14 +303,14 @@ user:{user_id}:connections = ["channel_name_1", "channel_name_2"]
 
 ## Security Considerations
 
-1. **JWT Authentication**: All WebSocket connections authenticated via HttpOnly cookie JWT
+1. **Session Authentication**: All WebSocket connections authenticated via HttpOnly session cookie
 2. **Connection Validation**: Verify user exists and is active before accepting connection
 3. **Rate Limiting**: Limit message frequency per connection (prevent spam)
 4. **Input Validation**: Validate all incoming WebSocket messages
 5. **CORS Configuration**: Proper WebSocket origin validation
 6. **Heartbeat Timeout**: Detect and close dead connections
 7. **Graceful Shutdown**: Notify clients before server maintenance
-8. **Token Refresh**: Handle JWT expiration during active connection
+8. **Session Management**: Handle Session expiration during active connection
 
 ## Performance Considerations
 
@@ -328,20 +328,20 @@ user:{user_id}:connections = ["channel_name_1", "channel_name_2"]
 |------|--------|---------------|
 | 1000 | Normal closure | No action needed |
 | 1001 | Server going away | Auto-reconnect after delay |
-| 4401 | Unauthorized (invalid/expired JWT) | Attempt token refresh, redirect to login |
+| 4401 | Unauthorized (invalid/expired session) | Redirect to login |
 | 4403 | Forbidden (inactive account) | Show error message, redirect to support |
 | 4429 | Too many requests (rate limit) | Back off, show warning |
 
 ## Security Considerations
 
-1. **JWT Authentication**: All WebSocket connections authenticated via HttpOnly cookie JWT
+1. **Session Authentication**: All WebSocket connections authenticated via HttpOnly session cookie
 2. **Connection Validation**: Verify user exists and is active before accepting connection
 3. **Rate Limiting**: Limit message frequency per connection (prevent spam)
 4. **Input Validation**: Validate all incoming WebSocket messages
 5. **CORS Configuration**: Proper WebSocket origin validation
 6. **Heartbeat Timeout**: Detect and close dead connections
 7. **Graceful Shutdown**: Notify clients before server maintenance
-8. **Token Refresh**: Handle JWT expiration during active connection
+8. **Session Management**: Handle Session expiration during active connection
 
 ## Performance Considerations
 
@@ -359,6 +359,6 @@ user:{user_id}:connections = ["channel_name_1", "channel_name_2"]
 |------|--------|---------------|
 | 1000 | Normal closure | No action needed |
 | 1001 | Server going away | Auto-reconnect after delay |
-| 4401 | Unauthorized (invalid/expired JWT) | Attempt token refresh, redirect to login |
+| 4401 | Unauthorized (invalid/expired session) | Redirect to login |
 | 4403 | Forbidden (inactive account) | Show error message, redirect to support |
 | 4429 | Too many requests (rate limit) | Back off, show warning |

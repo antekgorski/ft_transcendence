@@ -13,8 +13,8 @@ sequenceDiagram
     Note over User,Storage: Profile Information Update
     
     User->>Frontend: Navigate to profile settings
-    Frontend->>Backend: GET /api/user/profile<br/>(JWT from HttpOnly cookie)
-    Backend->>Backend: Extract & verify JWT from cookie
+    Frontend->>Backend: GET /api/user/profile<br/>(Session cookie)
+    Backend->>Backend: Verify session from cookie
     
     alt Token invalid/expired
         Backend-->>Frontend: 401 Unauthorized
@@ -35,9 +35,9 @@ sequenceDiagram
     Frontend->>Frontend: Validate changes<br/>- Check required fields<br/>- Validate email format<br/>- Check field lengths
     
     User->>Frontend: Click "Save Changes"
-    Frontend->>Backend: PATCH /api/user/profile<br/>{display_name, language, email}<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: PATCH /api/user/profile<br/>{display_name, language, email}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT from cookie<br/>Get user_id
+    Backend->>Backend: Verify session from cookie<br/>Get user_id
     Backend->>Backend: Sanitize inputs<br/>Validate data
     
     Backend->>DB: Check if new email exists<br/>(if email changed)
@@ -67,9 +67,9 @@ sequenceDiagram
     Frontend->>Frontend: Validate passwords<br/>- Old password not empty<br/>- New password strength<br/>- Passwords don't match
     
     User->>Frontend: Click "Change Password"
-    Frontend->>Backend: POST /api/user/password<br/>{old_password, new_password}<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: POST /api/user/password<br/>{old_password, new_password}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT from cookie
+    Backend->>Backend: Verify session from cookie
     Backend->>Backend: Sanitize inputs
     
     Backend->>DB: SELECT password_hash<br/>WHERE id = user_id
@@ -108,9 +108,9 @@ sequenceDiagram
     else File valid
         Frontend->>Frontend: Create FormData<br/>with file
         
-        Frontend->>Backend: POST /api/user/avatar<br/>(multipart/form-data)<br/>(JWT from HttpOnly cookie)
+        Frontend->>Backend: POST /api/user/avatar<br/>(multipart/form-data)<br/>(Session cookie)
         
-        Backend->>Backend: Extract & verify JWT from cookie
+        Backend->>Backend: Verify session from cookie
         Backend->>Backend: Validate file<br/>- Check MIME type<br/>- Verify file size<br/>- Scan for malware (optional)
         
         alt File validation fails
@@ -145,9 +145,9 @@ sequenceDiagram
     Frontend-->>User: Show confirmation dialog<br/>"This action cannot be undone"
     
     User->>Frontend: Confirm deletion<br/>Enter password for verification
-    Frontend->>Backend: DELETE /api/user/account<br/>{password}<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: DELETE /api/user/account<br/>{password}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT from cookie
+    Backend->>Backend: Verify session from cookie
     Backend->>Backend: Verify password
     
     alt Password incorrect
@@ -159,7 +159,7 @@ sequenceDiagram
         
         Note over Backend: Soft delete preserves<br/>game history integrity
         
-        Backend->>Backend: Clear JWT cookie<br/>(Set-Cookie with Max-Age=0)
+        Backend->>Backend: Clear session cookie<br/>(Set-Cookie with Max-Age=0)
         Backend-->>Frontend: 200 OK
         Frontend->>Frontend: Clear app state
         Frontend-->>User: Redirect to homepage<br/>Show: Account deleted
@@ -198,11 +198,11 @@ sequenceDiagram
 ### Backend Responsibilities
 
 1. **Authentication & Authorization**
-   - Extract JWT token from HttpOnly cookie on every request
-   - Verify JWT token signature and expiration
+   - Extract Session from HttpOnly cookie on every request
+   - Verify Session signature and expiration
    - Ensure user can only modify their own profile
    - Check token expiration
-   - Verify JWT token on every request
+   - Verify Session on every request
    - Ensure user can only modify their own profile
    - Check token expiration
 
@@ -301,11 +301,11 @@ WHERE id = user_id;
 
 ## Security Considerations
 
-1. **JWT Cookie Authentication**: 
-   - JWT stored in HttpOnly, Secure, SameSite=Strict cookie
+1. **Session Cookie Authentication**: 
+   - Session stored in HttpOnly, Secure, SameSite=Strict cookie
    - Not accessible via JavaScript (protects against XSS attacks)
    - Automatically included in requests with `credentials: 'include'`
-2. **Authorization**: Users can only update their own profile (verified via JWT user_id)
+2. **Authorization**: Users can only update their own profile (verified via session user_id)
 3. **Password Verification**: Always require old password to change password
 4. **Email Uniqueness**: Prevent duplicate emails across users
 5. **CSRF Protection**: Implement CSRF tokens for state-changing operations

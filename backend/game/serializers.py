@@ -176,3 +176,70 @@ class LeaderboardSerializer(serializers.Serializer):
     games_won = serializers.IntegerField()
     win_rate = serializers.FloatField()
     accuracy_percentage = serializers.FloatField()
+
+
+class GameHistorySerializer(serializers.ModelSerializer):
+    """Serializer for game history entries."""
+    opponent_username = serializers.SerializerMethodField()
+    opponent_avatar_url = serializers.SerializerMethodField()
+    result = serializers.SerializerMethodField()
+    game_type_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Game
+        fields = [
+            'id',
+            'opponent_username',
+            'opponent_avatar_url',
+            'game_type',
+            'game_type_display',
+            'result',
+            'duration_seconds',
+            'ended_at',
+            'player_1_shots',
+            'player_1_hits',
+            'player_2_shots',
+            'player_2_hits',
+        ]
+        read_only_fields = fields
+    
+    def get_opponent_username(self, obj):
+        """Get the opponent's username based on the current user."""
+        request = self.context.get('request')
+        if request:
+            current_user = request.user
+            if obj.player_1_id == current_user.id:
+                return obj.player_2.username if obj.player_2 else 'Unknown'
+            else:
+                return obj.player_1.username if obj.player_1 else 'Unknown'
+        return None
+    
+    def get_opponent_avatar_url(self, obj):
+        """Get the opponent's avatar URL."""
+        request = self.context.get('request')
+        if request:
+            current_user = request.user
+            if obj.player_1_id == current_user.id:
+                return obj.player_2.avatar_url if obj.player_2 else None
+            else:
+                return obj.player_1.avatar_url if obj.player_1 else None
+        return None
+    
+    def get_result(self, obj):
+        """Get the result of the game for the current user."""
+        request = self.context.get('request')
+        if request:
+            current_user = request.user
+            if obj.winner_id == current_user.id:
+                return 'win'
+            else:
+                return 'loss'
+        return None
+    
+    def get_game_type_display(self, obj):
+        """Get human-readable game type."""
+        game_type_map = {
+            'pvp': 'PvP',
+            'ai': 'AI',
+        }
+        return game_type_map.get(obj.game_type, obj.game_type)

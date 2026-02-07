@@ -130,12 +130,19 @@ CORS_ALLOW_CREDENTIALS = True
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
 SESSION_COOKIE_AGE = 86400  # 24 hours
-SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookie
+SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
+SESSION_COOKIE_SECURE = not DEBUG  # True in production with HTTPS, False in dev
+SESSION_COOKIE_NAME = 'sessionid'  # Explicit name
+
+# CSRF Configuration
 CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_HTTPONLY = False  # Must be False so JavaScript can read it
+CSRF_COOKIE_SECURE = not DEBUG  # True in production with HTTPS, False in dev
+CSRF_COOKIE_NAME = 'csrftoken'  # Explicit name
+CSRF_USE_SESSIONS = False  # Use cookie-based CSRF tokens
 CSRF_TRUSTED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if os.environ.get('CORS_ALLOWED_ORIGINS') else [
+    'https://localhost:8080',
     'http://localhost:8080',
     'http://127.0.0.1:8080',
 ]

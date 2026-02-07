@@ -123,9 +123,9 @@ sequenceDiagram
     Note over User1,User2: User Views Notifications
     
     User2->>App2: Click notification bell
-    App2->>Backend: GET /api/notifications<br/>?limit=20&offset=0<br/>(JWT from HttpOnly cookie)
+    App2->>Backend: GET /api/notifications<br/>?limit=20&offset=0<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT
+    Backend->>Backend: Verify session
     Backend->>DB: SELECT * FROM Notifications<br/>WHERE user_id = user2<br/>ORDER BY created_at DESC<br/>LIMIT 20
     DB-->>Backend: Notifications list
     
@@ -136,9 +136,9 @@ sequenceDiagram
     Note over User1,User2: User Reads Notification
     
     User2->>App2: Click on notification
-    App2->>Backend: PATCH /api/notifications/{id}/read<br/>(JWT from HttpOnly cookie)
+    App2->>Backend: PATCH /api/notifications/{id}/read<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT
+    Backend->>Backend: Verify session
     Backend->>DB: UPDATE Notifications<br/>SET is_read = true,<br/>read_at = CURRENT_TIMESTAMP<br/>WHERE id = notif_id<br/>AND user_id = user2
     DB-->>Backend: Updated
     
@@ -152,9 +152,9 @@ sequenceDiagram
     Note over User1,User2: Mark All As Read
     
     User2->>App2: Click "Mark all as read"
-    App2->>Backend: POST /api/notifications/read-all<br/>(JWT from HttpOnly cookie)
+    App2->>Backend: POST /api/notifications/read-all<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT
+    Backend->>Backend: Verify session
     Backend->>DB: UPDATE Notifications<br/>SET is_read = true,<br/>read_at = CURRENT_TIMESTAMP<br/>WHERE user_id = user2<br/>AND is_read = false
     DB-->>Backend: Updated 8 rows
     
@@ -168,9 +168,9 @@ sequenceDiagram
     Note over User1,User2: Delete Notification
     
     User2->>App2: Click delete on notification
-    App2->>Backend: DELETE /api/notifications/{id}<br/>(JWT from HttpOnly cookie)
+    App2->>Backend: DELETE /api/notifications/{id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT
+    Backend->>Backend: Verify session
     Backend->>DB: DELETE FROM Notifications<br/>WHERE id = notif_id<br/>AND user_id = user2
     DB-->>Backend: Deleted
     
@@ -181,7 +181,7 @@ sequenceDiagram
     Note over User1,User2: Update Notification Preferences
     
     User2->>App2: Navigate to Settings
-    App2->>Backend: GET /api/notifications/preferences<br/>(JWT from HttpOnly cookie)
+    App2->>Backend: GET /api/notifications/preferences<br/>(Session cookie)
     
     Backend->>DB: SELECT notification_preferences<br/>FROM User<br/>WHERE id = user2
     DB-->>Backend: Current preferences

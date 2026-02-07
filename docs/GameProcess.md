@@ -16,9 +16,9 @@ sequenceDiagram
     Note over Player1,Player2: Game Initiation (PvP)
     
     Player1->>Frontend1: Click "Challenge Friend" or "Play vs AI"
-    Frontend1->>Backend: POST /api/games/create<br/>{game_type: 'pvp', opponent_id}<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: POST /api/games/create<br/>{game_type: 'pvp', opponent_id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get player1_id
+    Backend->>Backend: Verify session<br/>Get player1_id
     Backend->>Backend: Validate opponent_id
     
     Backend->>DB: Check if both users are friends<br/>AND neither is blocked
@@ -54,9 +54,9 @@ sequenceDiagram
     Note over Player1,Player2: Game Initiation (vs AI)
     
     Player1->>Frontend1: Click "Play vs AI"
-    Frontend1->>Backend: POST /api/games/create<br/>{game_type: 'ai'}<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: POST /api/games/create<br/>{game_type: 'ai'}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get player1_id
+    Backend->>Backend: Verify session<br/>Get player1_id
     
     Backend->>DB: INSERT INTO Game<br/>- player_1_id<br/>- player_2_id = NULL<br/>- game_type = 'ai'<br/>- started_at
     DB-->>Backend: Game created
@@ -71,9 +71,9 @@ sequenceDiagram
     Note over Player1,Player2: Accept/Decline Invitation
     
     Player2->>Frontend2: Click "Accept" on invitation
-    Frontend2->>Backend: POST /api/games/{game_id}/accept<br/>(JWT from HttpOnly cookie)
+    Frontend2->>Backend: POST /api/games/{game_id}/accept<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get player2_id
+    Backend->>Backend: Verify session<br/>Get player2_id
     
     Backend->>Redis: Get game session
     Redis-->>Backend: Game data
@@ -97,7 +97,7 @@ sequenceDiagram
     
     alt Player 2 declines
         Player2->>Frontend2: Click "Decline"
-        Frontend2->>Backend: DELETE /api/games/{game_id}<br/>(JWT from HttpOnly cookie)
+        Frontend2->>Backend: DELETE /api/games/{game_id}<br/>(Session cookie)
         
         Backend->>Redis: Delete game session
         Redis-->>Backend: Deleted
@@ -120,7 +120,7 @@ sequenceDiagram
     Player1->>Frontend1: Click "Ready"
     Frontend1->>Backend: WS: ship_placement<br/>{game_id, ships: [{type, x, y, orientation}]}
     
-    Backend->>Backend: Verify JWT from WS connection
+    Backend->>Backend: Verify session from WS connection
     Backend->>Backend: Validate ship placement
     
     Backend->>Redis: Save Player 1 board state<br/>- ships positions<br/>- player_1_ready = true
@@ -158,7 +158,7 @@ sequenceDiagram
     Player1->>Frontend1: Click coordinate to attack
     Frontend1->>Backend: WS: make_move<br/>{game_id, x, y}
     
-    Backend->>Backend: Verify JWT<br/>Verify it's player's turn
+    Backend->>Backend: Verify session<br/>Verify it's player's turn
     
     Backend->>Redis: Get game session
     Redis-->>Backend: Game state
@@ -224,9 +224,9 @@ sequenceDiagram
     Frontend1->>Frontend1: Show confirmation dialog
     Player1->>Frontend1: Confirm forfeit
     
-    Frontend1->>Backend: POST /api/games/{game_id}/forfeit<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: POST /api/games/{game_id}/forfeit<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT
+    Backend->>Backend: Verify session
     Backend->>Redis: Get game session
     Redis-->>Backend: Game state
     
@@ -258,8 +258,8 @@ sequenceDiagram
     Frontend2-->>Player2: Show "Waiting for opponent..."
     
     alt Player reconnects within 60s
-        Frontend1->>Backend: WebSocket reconnect<br/>(JWT from cookie)
-        Backend->>Backend: Verify JWT<br/>Find active game
+        Frontend1->>Backend: WebSocket reconnect<br/>(Session cookie)
+        Backend->>Backend: Verify session<br/>Find active game
         
         Backend->>Redis: Get game session
         Redis-->>Backend: Current game state
@@ -340,7 +340,7 @@ sequenceDiagram
    - Track AI decision-making state in Redis
 
 4. **WebSocket Event Handling**
-   - Authenticate WebSocket connections via JWT
+   - Authenticate WebSocket connections via session
    - Broadcast game events to both players
    - Handle player disconnections and reconnections
    - Implement 60-second grace period for reconnection (auto-loss if exceeded)
@@ -565,7 +565,7 @@ LIMIT 20;
 
 ## Security Considerations
 
-1. **JWT Cookie Authentication**: All HTTP and WebSocket connections authenticated via HttpOnly cookies
+1. **Session Cookie Authentication**: All HTTP and WebSocket connections authenticated via HttpOnly cookies
 2. **Move Validation**: 
    - Verify it's player's turn
    - Validate coordinates are within bounds
