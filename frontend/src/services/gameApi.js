@@ -333,15 +333,26 @@ class GameApiService {
    * Kończy grę i zapisuje wynik (gdy wszystkie statki topione).
    * 
    * @param {string} gameId - UUID gry.
-   * @param {string} winnerId - UUID zwycięzcy.
+   * @param {object} endData - Dane końcowe gry.
+   * @param {string} endData.winnerId - UUID zwycięzcy.
+   * @param {number} endData.player1Shots - Liczba strzałów gracza 1.
+   * @param {number} endData.player1Hits - Liczba trafień gracza 1.
+   * @param {number} endData.player2Shots - Liczba strzałów gracza 2.
+   * @param {number} endData.player2Hits - Liczba trafień gracza 2.
+   * @param {string} [endData.reason='all_ships_sunk'] - Powód zakończenia.
    * @returns {Promise<object>} Zaktualizowany obiekt gry.
    * @throws {Error} Błąd z backendu.
    */
-  async endGame(gameId, winnerId) {
+  async endGame(gameId, endData) {
     try {
       // Przygotowujemy payload
       const payload = {
-        winner_id: winnerId,
+        winner_id: endData.winnerId,
+        player_1_shots: endData.player1Shots ?? 0,
+        player_1_hits: endData.player1Hits ?? 0,
+        player_2_shots: endData.player2Shots ?? 0,
+        player_2_hits: endData.player2Hits ?? 0,
+        reason: endData.reason ?? 'all_ships_sunk',
       };
 
       // Wysyłamy POST żądanie

@@ -66,6 +66,11 @@ function Body({ userData, onLogout, onNavigate }) {
   const [player1Id, setPlayer1Id] = useState(null);
   // Stan przechowujący ID player_2 z gry.
   const [player2Id, setPlayer2Id] = useState(null);
+  // Statystyki strzałów i trafień (dla endGame).
+  const [player1Shots, setPlayer1Shots] = useState(0);
+  const [player1Hits, setPlayer1Hits] = useState(0);
+  const [player2Shots, setPlayer2Shots] = useState(0);
+  const [player2Hits, setPlayer2Hits] = useState(0);
 
   // Efekt do pobierania ID obecnego użytkownika z userData
   useEffect(() => {
@@ -93,6 +98,8 @@ function Body({ userData, onLogout, onNavigate }) {
     { id: 'submarine-3', size: 1, label: 'Submarine (1)' },
     { id: 'submarine-4', size: 1, label: 'Submarine (1)' },
   ];
+  // Łączna liczba pól statków (do wykrycia końca gry).
+  const totalShipCells = SHIP_CONFIGS.reduce((sum, ship) => sum + ship.size, 0);
 
   // Funkcja licząca ile statków danego rozmiaru zostało już rozstawionych.
   const countPlacedShipsBySize = (size) => {
@@ -349,6 +356,34 @@ function Body({ userData, onLogout, onNavigate }) {
     }
   };
 
+  // Funkcja kończąca grę i zapisująca wynik.
+  const handleEndGame = async (winnerId, reason = 'all_ships_sunk') => {
+    if (!gameId) {
+      return;
+    }
+
+    try {
+      await gameApi.endGame(gameId, {
+        winnerId,
+        player1Shots,
+        player1Hits,
+        player2Shots,
+        player2Hits,
+        reason,
+      });
+
+      setGamePhase('end');
+      if (winnerId === currentUserId) {
+        setStatusMessage('You win! All enemy ships were sunk.');
+      } else {
+        setStatusMessage('You lost. All your ships were sunk.');
+      }
+    } catch (error) {
+      console.error('Error ending game:', error);
+      setStatusMessage(`Failed to end game: ${error.message}`);
+    }
+  };
+
   // Funkcja zmieniająca orientację statku.
   const toggleOrientation = () => {
     // Przełączamy między horizontal i vertical.
@@ -465,13 +500,45 @@ function Body({ userData, onLogout, onNavigate }) {
       // To wiadomość że przeciwnik nas atakuje
       if (data.move_type === 'shoot') {
         const { row, col } = data.data || {};
-        
+
+        if (row === undefined || col === undefined) {
+          return;
+        }
+
         // Pokazujemy komunikat że zostaliśmy zaatakowani
         setStatusMessage(`⚔️ OPPONENT ATTACKS at row ${row + 1}, col ${col + 1}!`);
-        
-        // Zaznaczamy miejsce ataku na naszej planszy dla wizualnej informacji
-        // (nie zmieniamy stanu SHIP/WATER, tylko pokazujemy że tam było zaatakowane)
-        // Szczegółowy rezultat otrzymamy z game_move_result
+
+        const isCurrentUserPlayer1 = currentUserId && player1Id && currentUserId === player1Id;
+        const opponentHits = isCurrentUserPlayer1 ? player2Hits : player1Hits;
+        const opponentId = isCurrentUserPlayer1 ? player2Id : player1Id;
+
+        setPlayerBoard((prevBoard) => {
+          const nextBoard = prevBoard.map((r) => r.slice());
+          const currentCell = nextBoard[row][col];
+          const wasAlreadyShot = currentCell === CELL_TYPES.HIT || currentCell === CELL_TYPES.MISS;
+
+          if (wasAlreadyShot) {
+            return prevBoard;
+          }
+
+          const isHit = currentCell === CELL_TYPES.SHIP;
+          nextBoard[row][col] = isHit ? CELL_TYPES.HIT : CELL_TYPES.MISS;
+
+          if (isCurrentUserPlayer1) {
+            setPlayer2Shots((prev) => prev + 1);
+            if (isHit) setPlayer2Hits((prev) => prev + 1);
+          } else if (currentUserId && player2Id) {
+            setPlayer1Shots((prev) => prev + 1);
+            if (isHit) setPlayer1Hits((prev) => prev + 1);
+          }
+
+          const opponentHitsAfter = opponentHits + (isHit ? 1 : 0);
+          if (isHit && opponentHitsAfter >= totalShipCells && opponentId && gamePhase === 'playing') {
+            handleEndGame(opponentId);
+          }
+
+          return nextBoard;
+        });
       }
     });
 
@@ -490,24 +557,43 @@ function Body({ userData, onLogout, onNavigate }) {
       // }
       
       const { row, col, result, ship_sunk } = data;
-      
+
+      const isHit = result === 'hit';
+      const isCurrentUserPlayer1 = currentUserId && player1Id && currentUserId === player1Id;
+      const myHits = isCurrentUserPlayer1 ? player1Hits : player2Hits;
+
       // Aktualizujemy planszę przeciwnika na podstawie rezultatu
       if (row !== undefined && col !== undefined) {
-        const newEnemyBoard = enemyBoard.map((r) => r.slice());
-        
-        if (result === 'hit') {
-          newEnemyBoard[row][col] = CELL_TYPES.HIT;
-          if (ship_sunk) {
-            setStatusMessage(`🎯 HIT AND SUNK at row ${row + 1}, col ${col + 1}! Great shot!`);
-          } else {
-            setStatusMessage(`🎯 HIT at row ${row + 1}, col ${col + 1}!`);
+        setEnemyBoard((prevBoard) => {
+          const newEnemyBoard = prevBoard.map((r) => r.slice());
+
+          if (result === 'hit') {
+            newEnemyBoard[row][col] = CELL_TYPES.HIT;
+            if (ship_sunk) {
+              setStatusMessage(`🎯 HIT AND SUNK at row ${row + 1}, col ${col + 1}! Great shot!`);
+            } else {
+              setStatusMessage(`🎯 HIT at row ${row + 1}, col ${col + 1}!`);
+            }
+          } else if (result === 'miss') {
+            newEnemyBoard[row][col] = CELL_TYPES.MISS;
+            setStatusMessage(`❌ MISS at row ${row + 1}, col ${col + 1}. Better luck next time!`);
           }
-        } else if (result === 'miss') {
-          newEnemyBoard[row][col] = CELL_TYPES.MISS;
-          setStatusMessage(`❌ MISS at row ${row + 1}, col ${col + 1}. Better luck next time!`);
-        }
-        
-        setEnemyBoard(newEnemyBoard);
+
+          return newEnemyBoard;
+        });
+      }
+
+      if (isCurrentUserPlayer1) {
+        setPlayer1Shots((prev) => prev + 1);
+        if (isHit) setPlayer1Hits((prev) => prev + 1);
+      } else if (currentUserId && player2Id) {
+        setPlayer2Shots((prev) => prev + 1);
+        if (isHit) setPlayer2Hits((prev) => prev + 1);
+      }
+
+      const myHitsAfter = myHits + (isHit ? 1 : 0);
+      if (isHit && myHitsAfter >= totalShipCells && gamePhase === 'playing') {
+        handleEndGame(currentUserId);
       }
       
       // Aktualizujemy turę - jeśli `player_turn_now` jest naszym ID, to nasza tura
@@ -567,7 +653,18 @@ function Body({ userData, onLogout, onNavigate }) {
       unsubscribeGameEnded();
       unsubscribeError();
     };
-  }, [gameApi, enemyBoard, currentUserId]);
+  }, [
+    gameApi,
+    currentUserId,
+    gamePhase,
+    player1Hits,
+    player1Id,
+    player1Shots,
+    player2Hits,
+    player2Id,
+    player2Shots,
+    totalShipCells,
+  ]);
 
   // Funkcja zwracająca klasę Tailwind dla danego typu pola.
   const getCellClass = (cellType, isEnemy) => {
