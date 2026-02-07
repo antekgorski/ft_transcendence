@@ -31,7 +31,7 @@ const createEmptyBoard = () => {
 };
 
 // Główny komponent GameBoard z logiką gry przeniesiony do Body.
-function Body({ onNavigate }) {
+function Body({ userData, onLogout, onNavigate }) {
   // Stan planszy gracza (własne statki).
   const [playerBoard, setPlayerBoard] = useState(createEmptyBoard);
   // Stan planszy przeciwnika (gdzie oddajemy strzały).
@@ -60,6 +60,19 @@ function Body({ onNavigate }) {
   const [shipsPlaced, setShipsPlaced] = useState({ player1: false, player2: false });
   // Stan przechowujący dane o rozmieszczonych statkach.
   const [placedShipsData, setPlacedShipsData] = useState([]);
+  // Stan przechowujący ID obecnego gracza (nas).
+  const [currentUserId, setCurrentUserId] = useState(null);
+  // Stan przechowujący ID player_1 z gry.
+  const [player1Id, setPlayer1Id] = useState(null);
+  // Stan przechowujący ID player_2 z gry.
+  const [player2Id, setPlayer2Id] = useState(null);
+
+  // Efekt do pobierania ID obecnego użytkownika z userData
+  useEffect(() => {
+    if (userData && userData.id) {
+      setCurrentUserId(userData.id);
+    }
+  }, [userData]);
 
   // Lista dostępnych statków (długości) do rozmieszczenia.
   const availableShips = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
@@ -364,6 +377,9 @@ function Body({ onNavigate }) {
       setGameId(game.id);
       // Zapisujemy typ gry.
       setGameType(game.game_type);
+      // Zapisujemy IDs graczy
+      setPlayer1Id(game.player_1);
+      setPlayer2Id(game.player_2);
       // Ustawiamy fazę gry na rozmieszczanie statków.
       setGamePhase('placing');
       // Aktualizujemy status.
@@ -505,9 +521,18 @@ function Body({ onNavigate }) {
       //   current_player_id: 'uuid'
       // }
       
-      // TODO w następnej fazie: zaimplementować
-      // const { current_player_id } = data;
-      // setIsMyTurn(/* sprawdzenie czy current_player_id to my */);
+      const { current_player_id } = data;
+      
+      // Sprawdzamy czy to nasza tura
+      const myTurn = current_player_id === currentUserId;
+      setIsMyTurn(myTurn);
+      
+      // Ustawiamy komunikat
+      if (myTurn) {
+        setStatusMessage('Your turn! Click enemy board to shoot.');
+      } else {
+        setStatusMessage('Opponent\'s turn. Waiting for their move...');
+      }
     });
 
     // Handler dla game_forfeit
@@ -540,7 +565,7 @@ function Body({ onNavigate }) {
       unsubscribeGameEnded();
       unsubscribeError();
     };
-  }, [gameApi, enemyBoard]);
+  }, [gameApi, enemyBoard, currentUserId]);
 
   // Funkcja zwracająca klasę Tailwind dla danego typu pola.
   const getCellClass = (cellType, isEnemy) => {
@@ -750,10 +775,10 @@ function Body({ onNavigate }) {
 }
 
 // Główny komponent GameBoard.
-function GameBoard({ onNavigate }) {
+function GameBoard({ userData, onLogout, onNavigate }) {
   return (
     <Template>
-      <Body onNavigate={onNavigate} />
+      <Body userData={userData} onLogout={onLogout} onNavigate={onNavigate} />
     </Template>
   );
 }
