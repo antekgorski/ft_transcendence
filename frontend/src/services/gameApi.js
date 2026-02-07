@@ -16,7 +16,7 @@ class GameApiService {
    */
   constructor() {
     // URL do endpointów gry (backend)
-    this.baseUrl = `${API_BASE_URL}/games`;
+    this.baseUrl = `${API_BASE_URL}/games/`;
     
     // WebSocket
     this.ws = null;
@@ -75,6 +75,7 @@ class GameApiService {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: getAuthHeaders(), // Nagłówki z tokenem JWT
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
 
@@ -103,9 +104,10 @@ class GameApiService {
   async getActiveGame() {
     try {
       // Wysyłamy GET żądanie do backendu
-      const response = await fetch(`${this.baseUrl}/active/`, {
+      const response = await fetch(`${this.baseUrl}active/`, {
         method: 'GET',
         headers: getAuthHeaders(), // Nagłówki z tokenem JWT
+        credentials: 'include',
       });
 
       // Jeśli odpowiedź 404, nie ma aktywnej gry
@@ -139,9 +141,10 @@ class GameApiService {
   async getGame(gameId) {
     try {
       // Wysyłamy GET żądanie
-      const response = await fetch(`${this.baseUrl}/${gameId}/`, {
+      const response = await fetch(`${this.baseUrl}${gameId}/`, {
         method: 'GET',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
 
       // Obsługujemy błąd
@@ -194,9 +197,10 @@ class GameApiService {
       };
 
       // Wysyłamy POST żądanie
-      const response = await fetch(`${this.baseUrl}/${gameId}/ships/`, {
+      const response = await fetch(`${this.baseUrl}${gameId}/ships/`, {
         method: 'POST',
         headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
 
@@ -224,9 +228,10 @@ class GameApiService {
   async checkShipsStatus(gameId) {
     try {
       // Wysyłamy GET żądanie
-      const response = await fetch(`${this.baseUrl}/${gameId}/ships/status/`, {
+      const response = await fetch(`${this.baseUrl}${gameId}/ships/status/`, {
         method: 'GET',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
 
       // Obsługujemy błąd
@@ -253,9 +258,10 @@ class GameApiService {
   async acceptGame(gameId) {
     try {
       // Wysyłamy POST żądanie
-      const response = await fetch(`${this.baseUrl}/${gameId}/accept/`, {
+      const response = await fetch(`${this.baseUrl}${gameId}/accept/`, {
         method: 'POST',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
 
       // Obsługujemy błąd
@@ -282,9 +288,10 @@ class GameApiService {
   async declineGame(gameId) {
     try {
       // Wysyłamy POST żądanie
-      const response = await fetch(`${this.baseUrl}/${gameId}/decline/`, {
+      const response = await fetch(`${this.baseUrl}${gameId}/decline/`, {
         method: 'POST',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
 
       // Obsługujemy błąd
@@ -310,9 +317,10 @@ class GameApiService {
   async forfeitGame(gameId) {
     try {
       // Wysyłamy POST żądanie
-      const response = await fetch(`${this.baseUrl}/${gameId}/forfeit/`, {
+      const response = await fetch(`${this.baseUrl}${gameId}/forfeit/`, {
         method: 'POST',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
 
       // Obsługujemy błąd
@@ -356,9 +364,10 @@ class GameApiService {
       };
 
       // Wysyłamy POST żądanie
-      const response = await fetch(`${this.baseUrl}/${gameId}/end-game/`, {
+      const response = await fetch(`${this.baseUrl}${gameId}/end-game/`, {
         method: 'POST',
         headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
 
@@ -388,6 +397,7 @@ class GameApiService {
       const response = await fetch(this.baseUrl, {
         method: 'GET',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
 
       // Obsługujemy błąd
@@ -414,9 +424,10 @@ class GameApiService {
   async getLeaderboard(limit = 100) {
     try {
       // Wysyłamy GET żądanie
-      const response = await fetch(`${this.baseUrl}/leaderboard/?limit=${limit}`, {
+      const response = await fetch(`${this.baseUrl}leaderboard/?limit=${limit}`, {
         method: 'GET',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
 
       // Obsługujemy błąd
