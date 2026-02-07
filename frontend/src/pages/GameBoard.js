@@ -201,19 +201,45 @@ function Body({ onNavigate }) {
       setStatusMessage('Finish placing ships before shooting.');
       return;
     }
+
+    // Jeśli nie jest nasza tura, nie można strzelać.
+    if (!isMyTurn) {
+      setStatusMessage('Wait for your turn to shoot.');
+      return;
+    }
+
     // Kopiujemy planszę przeciwnika.
     const newEnemyBoard = enemyBoard.map((r) => r.slice());
+    
     // Jeśli pole już było strzelane, nie robimy nic.
     if (newEnemyBoard[row][col] === CELL_TYPES.HIT || newEnemyBoard[row][col] === CELL_TYPES.MISS) {
       setStatusMessage('You already shot here.');
       return;
     }
-    // Tymczasowo oznaczamy strzał jako MISS (logika trafienia będzie z backendu).
-    newEnemyBoard[row][col] = CELL_TYPES.MISS;
-    // Aktualizujemy stan planszy przeciwnika.
-    setEnemyBoard(newEnemyBoard);
-    // Ustawiamy komunikat.
-    setStatusMessage(`Shot fired at ${row + 1}, ${col + 1}.`);
+
+    // Sprawdzamy czy WebSocket jest połączony
+    if (!gameApi.isConnected()) {
+      setStatusMessage('WebSocket not connected. Cannot shoot.');
+      return;
+    }
+
+    try {
+      // Wysyłamy strzał do backendu
+      gameApi.shootAt(row, col);
+      
+      // Tymczasowo oznaczamy strzał jako MISS (wkrótce zostanie aktualizowany z backendu)
+      newEnemyBoard[row][col] = CELL_TYPES.MISS;
+      setEnemyBoard(newEnemyBoard);
+      
+      // Ustawiamy komunikat.
+      setStatusMessage(`Shot fired at ${row + 1}, ${col + 1}. Waiting for result...`);
+      
+      // Ustawiamy że czekamy na wynik
+      setIsMyTurn(false);
+    } catch (error) {
+      console.error('Error sending shot:', error);
+      setStatusMessage(`Error sending shot: ${error.message}`);
+    }
   };
 
   // Funkcja wysyłająca statki do backendu.
@@ -281,6 +307,33 @@ function Body({ onNavigate }) {
     }
     // Wysyłamy statki do backendu.
     placeShipsOnBackend();
+  };
+
+  // Funkcja do poddania się grze.
+  const handleForfeit = async () => {
+    // Potwierdzenie
+    if (!window.confirm('Are you sure you want to forfeit the game?')) {
+      return;
+    }
+
+    try {
+      // Sprawdzamy czy WebSocket jest połączony
+      if (!gameApi.isConnected()) {
+        // Fallback - użyjemy REST API
+        console.log('WebSocket not connected, using REST API for forfeit');
+        const result = await gameApi.forfeitGame(gameId);
+        console.log('Game forfeited via REST API:', result);
+      } else {
+        // Wysyłamy forfeit przez WebSocket
+        gameApi.forfeit();
+      }
+
+      setStatusMessage('You have forfeited the game.');
+      setGamePhase('end');
+    } catch (error) {
+      console.error('Error forfeiting game:', error);
+      setStatusMessage(`Error forfeiting game: ${error.message}`);
+    }
   };
 
   // Funkcja zmieniająca orientację statku.
@@ -521,6 +574,17 @@ function Body({ onNavigate }) {
             {/* Tekst przycisku zakończenia */}
             Start Game
           </button>
+
+          {/* Przycisk Forfeit - widoczny tylko podczas grania */}
+          {gamePhase === 'playing' && (
+            <button
+              className="px-3 py-2 bg-red-600 rounded hover:bg-red-500"
+              onClick={handleForfeit}
+              title="Give up and lose the game"
+            >
+              Forfeit
+            </button>
+          )}
         </div>
       </div>
 

@@ -634,6 +634,57 @@ class GameApiService {
       }, delayMs);
     }
   }
+
+  /**
+   * Wysyła strzał w grze (game move).
+   * 
+   * @param {number} row - Rząd (0-9)
+   * @param {number} col - Kolumna (0-9)
+   * @throws {Error} Jeśli WebSocket nie jest połączony
+   * 
+   * @example
+   * await gameApi.shootAt(3, 5);
+   */
+  shootAt(row, col) {
+    if (!this.isConnected()) {
+      throw new Error('WebSocket not connected. Cannot send shot.');
+    }
+
+    // Walidacja współrzędnych
+    if (typeof row !== 'number' || typeof col !== 'number' || 
+        row < 0 || row > 9 || col < 0 || col > 9) {
+      throw new Error('Invalid coordinates. Row and col must be between 0 and 9.');
+    }
+
+    // Wysyłamy strzał
+    this.send({
+      type: 'game_move',
+      move_type: 'shoot',
+      data: {
+        row,
+        col,
+      },
+    });
+
+    console.log(`Shot sent to: row=${row}, col=${col}`);
+  }
+
+  /**
+   * Wysyła poddanie się w grze.
+   * 
+   * @throws {Error} Jeśli WebSocket nie jest połączony
+   */
+  forfeit() {
+    if (!this.isConnected()) {
+      throw new Error('WebSocket not connected. Cannot forfeit game.');
+    }
+
+    this.send({
+      type: 'game_forfeit',
+    });
+
+    console.log('Forfeit sent');
+  }
 }
 
 // Tworzymy singleton instancji serwisu
