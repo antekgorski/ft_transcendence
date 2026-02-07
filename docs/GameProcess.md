@@ -16,9 +16,9 @@ sequenceDiagram
     Note over Player1,Player2: Game Initiation (PvP)
     
     Player1->>Frontend1: Click "Challenge Friend" or "Play vs AI"
-    Frontend1->>Backend: POST /api/games/create<br/>{game_type: 'pvp', opponent_id}<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: POST /api/games/create<br/>{game_type: 'pvp', opponent_id}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get player1_id
+    Backend->>Backend: Verify session<br/>Get player1_id
     Backend->>Backend: Validate opponent_id
     
     Backend->>DB: Check if both users are friends<br/>AND neither is blocked
@@ -54,9 +54,9 @@ sequenceDiagram
     Note over Player1,Player2: Game Initiation (vs AI)
     
     Player1->>Frontend1: Click "Play vs AI"
-    Frontend1->>Backend: POST /api/games/create<br/>{game_type: 'ai'}<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: POST /api/games/create<br/>{game_type: 'ai'}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get player1_id
+    Backend->>Backend: Verify session<br/>Get player1_id
     
     Backend->>DB: INSERT INTO Game<br/>- player_1_id<br/>- player_2_id = NULL<br/>- game_type = 'ai'<br/>- started_at
     DB-->>Backend: Game created
@@ -71,9 +71,9 @@ sequenceDiagram
     Note over Player1,Player2: Accept/Decline Invitation
     
     Player2->>Frontend2: Click "Accept" on invitation
-    Frontend2->>Backend: POST /api/games/{game_id}/accept<br/>(JWT from HttpOnly cookie)
+    Frontend2->>Backend: POST /api/games/{game_id}/accept<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT<br/>Get player2_id
+    Backend->>Backend: Verify session<br/>Get player2_id
     
     Backend->>Redis: Get game session
     Redis-->>Backend: Game data
@@ -97,7 +97,7 @@ sequenceDiagram
     
     alt Player 2 declines
         Player2->>Frontend2: Click "Decline"
-        Frontend2->>Backend: DELETE /api/games/{game_id}<br/>(JWT from HttpOnly cookie)
+        Frontend2->>Backend: DELETE /api/games/{game_id}<br/>(Session cookie)
         
         Backend->>Redis: Delete game session
         Redis-->>Backend: Deleted
@@ -120,7 +120,7 @@ sequenceDiagram
     Player1->>Frontend1: Click "Ready"
     Frontend1->>Backend: WS: ship_placement<br/>{game_id, ships: [{type, x, y, orientation}]}
     
-    Backend->>Backend: Verify JWT from WS connection
+    Backend->>Backend: Verify session from WS connection
     Backend->>Backend: Validate ship placement
     
     Backend->>Redis: Save Player 1 board state<br/>- ships positions<br/>- player_1_ready = true
@@ -158,7 +158,7 @@ sequenceDiagram
     Player1->>Frontend1: Click coordinate to attack
     Frontend1->>Backend: WS: make_move<br/>{game_id, x, y}
     
-    Backend->>Backend: Verify JWT<br/>Verify it's player's turn
+    Backend->>Backend: Verify session<br/>Verify it's player's turn
     
     Backend->>Redis: Get game session
     Redis-->>Backend: Game state
@@ -224,9 +224,9 @@ sequenceDiagram
     Frontend1->>Frontend1: Show confirmation dialog
     Player1->>Frontend1: Confirm forfeit
     
-    Frontend1->>Backend: POST /api/games/{game_id}/forfeit<br/>(JWT from HttpOnly cookie)
+    Frontend1->>Backend: POST /api/games/{game_id}/forfeit<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify JWT
+    Backend->>Backend: Verify session
     Backend->>Redis: Get game session
     Redis-->>Backend: Game state
     
@@ -253,28 +253,38 @@ sequenceDiagram
     WS->>Backend: Connection lost for Player 1
     Backend->>Backend: Start 60-second timer
     
+    Backend->>WS: Notify Player 2
+    WS->>Frontend2: Opponent disconnected,<br/>waiting for reconnection (60s)
+    Frontend2-->>Player2: Show "Waiting for opponent..."
+    
     alt Player reconnects within 60s
-        Frontend1->>Backend: WebSocket reconnect<br/>(JWT from cookie)
-        Backend->>Backend: Verify JWT<br/>Find active game
+        Frontend1->>Backend: WebSocket reconnect<br/>(Session cookie)
+        Backend->>Backend: Verify session<br/>Find active game
+        
         Backend->>Redis: Get game session
         Redis-->>Backend: Current game state
+        
         Backend->>WS: Restore connection
         WS->>Frontend1: Game state sync
         Frontend1->>Frontend1: Restore board state
         Frontend1-->>Player1: Resume game
+        
         Backend->>WS: Notify Player 2
         WS->>Frontend2: Opponent reconnected
+        Frontend2-->>Player2: Resume game
     else Timeout (60 seconds)
-        Backend->>DB: UPDATE Game SET<br/>- winner_id = player_2_id<br/>- ended_at = CURRENT_TIMESTAMP
+        Backend->>Backend: Mark disconnected player as loser
+        
+        Backend->>DB: UPDATE Game SET<br/>status = 'forfeited',<br/>winner_id = player_2_id,<br/>ended_at = CURRENT_TIMESTAMP,<br/>duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))
         DB-->>Backend: Updated
         
-        Backend->>DB: UPDATE PlayerStats
+        Backend->>DB: UPDATE PlayerStats<br/>for both players
         DB-->>Backend: Updated
         
         Backend->>Redis: Delete game session
         Redis-->>Backend: Deleted
         
-        Backend->>WS: Notify Player 2
+        Backend->>WS: Broadcast game_over<br/>{winner: player_2_id, reason: 'disconnect_timeout'}
         WS->>Frontend2: Opponent disconnected, you win!
         Frontend2-->>Player2: Show victory screen
     end
@@ -330,14 +340,15 @@ sequenceDiagram
    - Track AI decision-making state in Redis
 
 4. **WebSocket Event Handling**
-   - Authenticate WebSocket connections via JWT
+   - Authenticate WebSocket connections via session
    - Broadcast game events to both players
    - Handle player disconnections and reconnections
-   - Implement 60-second timeout for disconnects
+   - Implement 60-second grace period for reconnection (auto-loss if exceeded)
+   - Update game status in database on timeout (active → forfeited)
 
 5. **Game Completion**
    - Calculate final statistics
-   - Update database with game results
+   - Update database with game results (status = 'completed')
    - Update player statistics (wins, losses, accuracy, streaks)
    - Clean up Redis game sessions
 
@@ -351,6 +362,7 @@ INSERT INTO Game (
     player_1_id,
     player_2_id,
     game_type,
+    status,
     started_at,
     player_1_shots,
     player_1_hits,
@@ -361,6 +373,7 @@ INSERT INTO Game (
     player1_id,
     player2_id,  -- NULL for AI games
     'pvp',       -- or 'ai'
+    'pending',   -- initial status
     CURRENT_TIMESTAMP,
     0, 0, 0, 0
 );
@@ -371,6 +384,7 @@ INSERT INTO Game (
 -- Update game with results
 UPDATE Game 
 SET winner_id = winner_player_id,
+    status = 'completed',
     ended_at = CURRENT_TIMESTAMP,
     duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at)),
     player_1_shots = final_p1_shots,
@@ -405,6 +419,28 @@ SET games_played = games_played + 1,
     current_win_streak = 0,
     updated_at = CURRENT_TIMESTAMP
 WHERE user_id = loser_id;
+```
+
+#### Handle Player Reconnection
+```sql
+-- Reconnection succeeds - game continues unchanged
+-- No database update needed, game remains in 'active' status
+-- Redis session is retrieved and sent to reconnected client
+```
+
+#### Handle Disconnection Timeout
+```sql
+-- End game due to timeout (60 seconds) - disconnected player loses
+UPDATE Game
+SET status = 'forfeited',
+    winner_id = remaining_player_id,
+    ended_at = CURRENT_TIMESTAMP,
+    duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))
+WHERE id = game_id
+  AND status = 'active';
+
+-- Update player stats (same as forfeit)
+-- [Winner and loser stats updates as shown above]
 ```
 
 #### Get Player Game History
@@ -529,7 +565,7 @@ LIMIT 20;
 
 ## Security Considerations
 
-1. **JWT Cookie Authentication**: All HTTP and WebSocket connections authenticated via HttpOnly cookies
+1. **Session Cookie Authentication**: All HTTP and WebSocket connections authenticated via HttpOnly cookies
 2. **Move Validation**: 
    - Verify it's player's turn
    - Validate coordinates are within bounds

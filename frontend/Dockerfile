@@ -1,35 +1,22 @@
-# Frontend Dockerfile - Production Build
-FROM node:18-alpine as build
+# Frontend Dockerfile
+FROM node:18-alpine
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
+# Copy package files first (better caching - this layer won't rebuild if source code changes)
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (npm ci requires package-lock.json, so using npm install for dev)
+RUN npm install && \
+    npm cache clean --force
 
-# Copy application code
+# Copy configuration files
+COPY tailwind.config.js postcss.config.js ./
+
+# Copy entire directory
 COPY . .
 
-# Set API URL for build (using nginx proxy)
-ENV REACT_APP_API_URL=/api
+EXPOSE 3000
 
-# Build the application
-RUN npm run build
-
-# Production stage with nginx
-FROM nginx:alpine
-
-# Copy built assets from build stage
-COPY --from=build /app/build /usr/share/nginx/html
-
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Expose port
-EXPOSE 80
-
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Start React development server with optimized settings
+CMD ["npm", "start"]

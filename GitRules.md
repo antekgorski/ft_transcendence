@@ -74,3 +74,40 @@ If your teammates have merged new code into `develop` while you are still workin
 git fetch origin
 git merge origin/develop
 ```
+
+## 4. Other Useful Commands
+
+### Viewing Branches
+
+**Show all local branches:**
+```bash
+git branch
+```
+
+**Show all remote branches:**
+```bash
+git branch -r
+```
+
+**Update list of remote branches:**
+```bash
+git fetch
+```
+
+**Show local and remote-tracking branches:**
+```bash
+git branch -a
+```
+
+### Cleaning Up Local Branches
+
+To remove local references to remote branches that have been deleted on GitHub (Pruning):
+```bash
+git fetch --prune
+```
+
+To delete local branches that no longer exist on the remote repository:
+```bash
+# Deletes local branches that are marked as [gone]
+git branch -vv | grep ': gone]' | awk '{print $1}' | xargs git branch -d
+```

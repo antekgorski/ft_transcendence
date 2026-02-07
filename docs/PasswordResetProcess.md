@@ -157,9 +157,9 @@ sequenceDiagram
     User->>User: Click "I didn't request this" link<br/>in email
     
     User->>Frontend: Navigate to security page
-    Frontend->>Backend: POST /api/auth/password-reset/report<br/>{token}<br/>(JWT from HttpOnly cookie)
+    Frontend->>Backend: POST /api/auth/password-reset/report<br/>{token}<br/>(Session cookie)
     
-    Backend->>Backend: Extract & verify user JWT
+    Backend->>Backend: Verify user session
     Backend->>Backend: Hash reported token
     Backend->>Redis: DEL reset:{token_hash}
     Redis-->>Backend: Token invalidated
