@@ -453,26 +453,25 @@ function Body({ userData, onLogout, onNavigate }) {
     // Handler dla wiadomości game_move
     // Ta wiadomość oznacza że gracz oddał strzał (mój lub przeciwnika)
     const unsubscribeGameMove = gameApi.on('game_move', (data) => {
-      console.log('Received game_move:', data);
+      console.log('Received game_move (opponent is shooting at us):', data);
       
       // data = {
       //   type: 'game_move',
-      //   player_id: 'uuid',
+      //   player_id: 'opponent_uuid',
       //   move_type: 'shoot',
       //   data: { row: X, col: Y }
       // }
       
-      // Sprawdzamy czy to mój strzał czy przeciwnika
-      // Jeśli move_type to 'shoot', to oznacza że ktoś oddał strzał
+      // To wiadomość że przeciwnik nas atakuje
       if (data.move_type === 'shoot') {
         const { row, col } = data.data || {};
         
-        // Tutaj będziemy obsługiwać rezultat strzału z backendu
-        // Na razie tylko pokazujemy że otrzymaliśmy wiadomość
-        setStatusMessage(`Shot received at row=${row}, col=${col}`);
+        // Pokazujemy komunikat że zostaliśmy zaatakowani
+        setStatusMessage(`⚔️ OPPONENT ATTACKS at row ${row + 1}, col ${col + 1}!`);
         
-        // TODO w następnej fazie: dodać logikę do aktualizacji planszy
-        // i wysyłania rezultatu trafienia/pudła
+        // Zaznaczamy miejsce ataku na naszej planszy dla wizualnej informacji
+        // (nie zmieniamy stanu SHIP/WATER, tylko pokazujemy że tam było zaatakowane)
+        // Szczegółowy rezultat otrzymamy z game_move_result
       }
     });
 
@@ -498,11 +497,14 @@ function Body({ userData, onLogout, onNavigate }) {
         
         if (result === 'hit') {
           newEnemyBoard[row][col] = CELL_TYPES.HIT;
-          const hitMessage = ship_sunk ? `Hit and SUNK! at ${row + 1}, ${col + 1}` : `Hit at ${row + 1}, ${col + 1}!`;
-          setStatusMessage(hitMessage);
+          if (ship_sunk) {
+            setStatusMessage(`🎯 HIT AND SUNK at row ${row + 1}, col ${col + 1}! Great shot!`);
+          } else {
+            setStatusMessage(`🎯 HIT at row ${row + 1}, col ${col + 1}!`);
+          }
         } else if (result === 'miss') {
           newEnemyBoard[row][col] = CELL_TYPES.MISS;
-          setStatusMessage(`Miss at ${row + 1}, ${col + 1}!`);
+          setStatusMessage(`❌ MISS at row ${row + 1}, col ${col + 1}. Better luck next time!`);
         }
         
         setEnemyBoard(newEnemyBoard);
@@ -675,6 +677,67 @@ function Body({ userData, onLogout, onNavigate }) {
           </div>
         )}
 
+      {/* Sekcja czekania na gracza */}
+      {gamePhase === 'waiting' && (
+        <div className="max-w-3xl mx-auto mb-6 bg-slate-800/60 p-4 rounded-lg text-center">
+          <h2 className="text-xl font-semibold mb-3">Waiting for Opponent</h2>
+          <p className="text-slate-300 mb-4">
+            {gameType === 'ai' 
+              ? 'AI opponent is placing ships...' 
+              : 'Waiting for your opponent to place their ships...'}
+          </p>
+          <div className="flex justify-center gap-2 mb-4">
+            <div className="animate-spin h-6 w-6 border-4 border-emerald-500 border-t-transparent rounded-full"></div>
+            <span className="text-slate-300">Ships placed: {shipsPlaced.player1 ? '✓' : '✗'} (You) / {shipsPlaced.player2 ? '✓' : '✗'} (Opponent)</span>
+          </div>
+        </div>
+      )}
+
+      {/* Sekcja informacji o grze podczas gry */}
+      {gamePhase === 'playing' && (
+        <div className="max-w-3xl mx-auto mb-6 bg-slate-800/60 p-4 rounded-lg">
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-slate-400 text-sm">Game Status</p>
+              <p className="text-lg font-semibold text-emerald-400">Active</p>
+            </div>
+            <div>
+              <p className="text-slate-400 text-sm">Current Turn</p>
+              <p className={`text-lg font-semibold ${isMyTurn ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                {isMyTurn ? 'Your Turn' : 'Opponent\'s Turn'}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-400 text-sm">Game Type</p>
+              <p className="text-lg font-semibold text-blue-400">{gameType === 'ai' ? 'vs AI' : 'vs Friend'}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sekcja końca gry */}
+      {gamePhase === 'end' && (
+        <div className="max-w-3xl mx-auto mb-6 bg-slate-800/60 p-4 rounded-lg text-center">
+          <h2 className="text-2xl font-bold mb-3">Game Over!</h2>
+          <p className="text-slate-300 mb-4">{statusMessage}</p>
+          <button
+            className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500"
+            onClick={() => {
+              setGamePhase('lobby');
+              setGameId(null);
+              setGameType(null);
+              setPlayerBoard(createEmptyBoard());
+              setEnemyBoard(createEmptyBoard());
+              setIsPlacingShips(true);
+              setPlacedShipsData([]);
+              setStatusMessage('Place your ships on your board.');
+            }}
+          >
+            Play Again
+          </button>
+        </div>
+      )}
+
       {/* Panel sterowania */}
       <div className="max-w-5xl mx-auto mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between">
         {/* Status gry */}
@@ -728,7 +791,8 @@ function Body({ userData, onLogout, onNavigate }) {
         </div>
       </div>
 
-      {/* Sekcja plansz */}
+      {/* Sekcja plansz - widoczna w fazach placing i playing */}
+      {(gamePhase === 'placing' || gamePhase === 'playing') && (
       <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Plansza gracza */}
         <div className="bg-slate-800/60 p-4 rounded-lg">
@@ -770,6 +834,7 @@ function Body({ userData, onLogout, onNavigate }) {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
