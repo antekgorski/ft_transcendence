@@ -8,15 +8,23 @@
 import { API_BASE_URL, getAuthHeaders, getAuthToken } from '../config/api';
 
 /**
- * Klasa GameApiService zarządza wszystkimi żądaniami do backend API.
+ * Klasa GameApiService zarządza wszystkimi żądaniami do backend API i WebSocket.
  */
 class GameApiService {
   /**
-   * Konstruktor - inicjalizuje bazowy URL API.
+   * Konstruktor - inicjalizuje bazowy URL API i WebSocket.
    */
   constructor() {
     // URL do endpointów gry (backend)
     this.baseUrl = `${API_BASE_URL}/games`;
+    
+    // WebSocket
+    this.ws = null;
+    this.wsUrl = null;
+    this.messageHandlers = {}; // {type: [callback1, callback2, ...]}
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+    this.reconnectDelay = 3000; // 3s
   }
 
   /**
@@ -439,6 +447,191 @@ class GameApiService {
     } catch (error) {
       console.error('Error getting player stats:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Łączy się z WebSocket dla gry.
+   * 
+   * @param {string} gameId - UUID gry do której chcemy się dołączyć.
+   * @returns {Promise<void>} Promise rozwiązywany gdy WebSocket jest gotowy.
+   * @throws {Error} Błąd połączenia WebSocket.
+   * 
+   * @example
+   * await gameApi.connectWebSocket('game-uuid');
+   * // Teraz możesz subscribe na wiadomości:
+   * gameApi.on('game_move_result', (data) => { ... });
+   */
+  connectWebSocket(gameId) {
+    return new Promise((resolve, reject) => {
+      try {
+        // Budujemy URL WebSocket (dostosuj do Twojej konfiguracji)
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        this.wsUrl = `${protocol}//${host}/ws/games/`;
+
+        // Tworzymy WebSocket
+        this.ws = new WebSocket(this.wsUrl);
+
+        // Ustawiamy handler dla połączenia
+        this.ws.onopen = () => {
+          console.log('WebSocket connected:', this.wsUrl);
+          this.reconnectAttempts = 0; // Reset licznika reconnect'ów
+
+          // Wysyłamy join message z tokenem JWT
+          const token = getAuthToken();
+          this.send({
+            type: 'join',
+            game_id: gameId,
+            token: token, // Token JWT do uwierzytelniania
+          });
+
+          // Resolve promise'a - WebSocket jest gotowy
+          resolve();
+        };
+
+        // Handler dla odebranych wiadomości
+        this.ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('WebSocket message received:', data);
+
+            // Jeśli to wiadomość 'connected', oznacza to że backend potwierdził join
+            if (data.type === 'connected') {
+              console.log('Authenticated to game:', data);
+              return;
+            }
+
+            // Uruchamiamy wszystkie handlery zarejestrowane na ten typ wiadomości
+            if (this.messageHandlers[data.type]) {
+              this.messageHandlers[data.type].forEach((callback) => {
+                try {
+                  callback(data);
+                } catch (e) {
+                  console.error(`Error in handler for ${data.type}:`, e);
+                }
+              });
+            }
+          } catch (e) {
+            console.error('Error parsing WebSocket message:', e);
+          }
+        };
+
+        // Handler dla błędów
+        this.ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          reject(new Error('WebSocket connection failed'));
+        };
+
+        // Handler dla rozłączenia
+        this.ws.onclose = () => {
+          console.log('WebSocket disconnected');
+          this._handleDisconnect();
+        };
+      } catch (error) {
+        console.error('Error connecting WebSocket:', error);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Wysyła wiadomość przez WebSocket.
+   * 
+   * @param {object} message - Obiekt wiadomości do wysłania.
+   * @throws {Error} Jeśli WebSocket nie jest połączony.
+   * 
+   * @example
+   * gameApi.send({
+   *   type: 'game_move',
+   *   move_type: 'shoot',
+   *   data: { row: 3, col: 5 }
+   * });
+   */
+  send(message) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket is not connected');
+    }
+
+    try {
+      this.ws.send(JSON.stringify(message));
+      console.log('WebSocket message sent:', message);
+    } catch (error) {
+      console.error('Error sending WebSocket message:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Rejestruje handler na typ wiadomości WebSocket.
+   * 
+   * @param {string} type - Typ wiadomości (np. 'game_move_result', 'turn_changed').
+   * @param {function} callback - Funkcja wywoływana gdy przyjdzie wiadomość tego typu.
+   * 
+   * @example
+   * gameApi.on('game_move_result', (data) => {
+   *   console.log('Shot result:', data.hit);
+   * });
+   * 
+   * // Można zarejestrować wiele handlerów na ten sam typ:
+   * gameApi.on('turn_changed', () => { console.log('Twoja tura'); });
+   * gameApi.on('turn_changed', () => { updateUI(); });
+   */
+  on(type, callback) {
+    if (!this.messageHandlers[type]) {
+      this.messageHandlers[type] = [];
+    }
+    this.messageHandlers[type].push(callback);
+
+    // Zwracamy funkcję do unsubscribe'owania
+    return () => {
+      this.messageHandlers[type] = this.messageHandlers[type].filter(
+        (cb) => cb !== callback
+      );
+    };
+  }
+
+  /**
+   * Rozłącza się z WebSocket.
+   * 
+   * @example
+   * gameApi.disconnectWebSocket();
+   */
+  disconnectWebSocket() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+      this.messageHandlers = {};
+      this.reconnectAttempts = 0;
+      console.log('WebSocket disconnected intentionally');
+    }
+  }
+
+  /**
+   * Sprawdza czy WebSocket jest połączony.
+   * 
+   * @returns {boolean} True jeśli WebSocket jest OPEN.
+   */
+  isConnected() {
+    return this.ws && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Wewnętrzny handler dla rozłączenia - obsługuje auto-reconnect.
+   * @private
+   */
+  _handleDisconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delayMs = this.reconnectDelay * this.reconnectAttempts;
+      console.log(
+        `WebSocket disconnected. Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delayMs}ms`
+      );
+
+      setTimeout(() => {
+        // Tutaj możemy spróbować reconnect'a jeśli będzie to potrzebne
+        // Na razie tylko logujemy
+      }, delayMs);
     }
   }
 }
