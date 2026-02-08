@@ -1,15 +1,17 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import API_BASE_URL from '../config';
-import { AuthContext } from '../contexts/AuthContext';
 import api from '../utils/api';
+import { AuthContext } from '../contexts/AuthContext';
 
-function WelcomePage() {
+function RegisterPage() {
   const navigate = useNavigate();
   const { checkAuth } = useContext(AuthContext);
   const [formData, setFormData] = useState({
     username: '',
-    password: ''
+    email: '',
+    password: '',
+    passwordConfirm: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,36 +32,48 @@ function WelcomePage() {
     setError('');
     setSuccess('');
 
-    if (!formData.username || !formData.password) {
-      setError('Username and password are required');
+    if (formData.password !== formData.passwordConfirm) {
+      setError('Passwords do not match');
+      return;
+    }
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters long');
       return;
     }
 
     setLoading(true);
     try {
-      const response = await api.post('/auth/login/', {
-        identifier: formData.username,
+      const response = await api.post('/auth/register/', {
+        username: formData.username,
+        email: formData.email,
         password: formData.password,
       });
 
-      if (response.status === 200) {
-        const data = response.data;
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setSuccess('Login successful!');
-        
+      if (response.status === 201) {
+        setSuccess('Registration successful! Logging you in...');
+        // checkAuth will be called in useEffect when success is set
         await checkAuth();
-        navigate('/');
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error || 
                        err.response?.data?.error_pl || 
-                       'Login failed';
+                       'Registration failed';
       setError(errorMsg);
-      console.error('Login error:', err);
-    } finally {
+      console.error('Registration error:', err);
       setLoading(false);
     }
   };
+
+  // Cleanup timeout on unmount and redirect after successful registration
+  useEffect(() => {
+    if (!success) return;
+    
+    const timer = setTimeout(() => {
+      navigate('/');
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [success, navigate]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 p-5">
@@ -70,11 +84,11 @@ function WelcomePage() {
             ⚓ BATTLESHIP
           </h1>
           <p className="text-lg text-emerald-400 mt-2 tracking-wide">
-            3D Tactical Multiplayer Game
+            Create Your Account
           </p>
         </div>
 
-        {/* Auth Form */}
+        {/* Register Form */}
         <div className="w-full bg-white/95 rounded-xl shadow-2xl p-10 backdrop-blur-sm">
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-center">
@@ -89,7 +103,7 @@ function WelcomePage() {
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <h2 className="text-2xl font-bold text-center text-slate-800 mb-2">
-              Login
+              Register
             </h2>
 
             <input
@@ -106,10 +120,37 @@ function WelcomePage() {
             />
 
             <input
+              type="email"
+              name="email"
+              placeholder="Email"
+              value={formData.email}
+              onChange={handleInputChange}
+              required
+              disabled={loading}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
+                         focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
+                         disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
+            />
+
+            <input
               type="password"
               name="password"
-              placeholder="Password"
+              placeholder="Password (min 8 characters)"
               value={formData.password}
+              onChange={handleInputChange}
+              required
+              disabled={loading}
+              minLength={8}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
+                         focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
+                         disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
+            />
+
+            <input
+              type="password"
+              name="passwordConfirm"
+              placeholder="Confirm Password"
+              value={formData.passwordConfirm}
               onChange={handleInputChange}
               required
               disabled={loading}
@@ -126,25 +167,25 @@ function WelcomePage() {
                          hover:from-emerald-600 hover:to-emerald-700 hover:shadow-lg
                          disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              {loading ? 'LOGGING IN...' : 'LOGIN'}
+              {loading ? 'REGISTERING...' : 'REGISTER'}
             </button>
             
-          <button
+            <button
               type="button"
               onClick={() => window.location.href = `${API_BASE_URL}/auth/oauth/42/start/`}
               className="w-full py-3 bg-blue-600 text-white font-bold uppercase rounded-md
                          hover:bg-blue-700 transition-all"
             >
-              Sign in with 42
+              Sign up with 42
             </button>
 
             <p className="text-center text-gray-600 mt-2">
-              Don't have an account?{' '}
+              Already have an account?{' '}
               <Link
-                to="/register"
+                to="/"
                 className="text-emerald-600 font-semibold hover:text-emerald-700"
               >
-                Sign Up
+                Login
               </Link>
             </p>
           </form>
@@ -159,4 +200,4 @@ function WelcomePage() {
   );
 }
 
-export default WelcomePage;
+export default RegisterPage;

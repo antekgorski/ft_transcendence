@@ -41,8 +41,8 @@ sequenceDiagram
             Backend->>DB: INSERT INTO PlayerStats<br/>- id (UUID)<br/>- user_id<br/>- Initialize all stats to 0
             DB-->>Backend: Stats created
             
-            Backend->>Backend: Generate JWT token
-            Backend-->>Frontend: Set-Cookie: jwt=token<br/>(HttpOnly, Secure, SameSite)
+            Backend->>Backend: Create session
+            Backend-->>Frontend: Set session cookie<br/>(HttpOnly, Secure, SameSite)
             Frontend->>Frontend: Update app state<br/>(user info, stats)
             Frontend-->>User: Redirect to dashboard
         end
@@ -69,9 +69,9 @@ sequenceDiagram
     alt OAuth user exists
         Backend->>DB: UPDATE last_login
         DB-->>Backend: Updated
-        Backend->>Backend: Generate JWT token
-        Backend-->>Frontend: Success + JWT token
-        Frontend->>Frontend: Store JWT in localStorage
+        Backend->>Backend: Create session
+        Backend-->>Frontend: Success + Session
+        Frontend->>Frontend: Session managed by cookie
         Frontend-->>User: Redirect to dashboard
     else New OAuth user
         Backend->>DB: Check if email exists
@@ -88,9 +88,9 @@ sequenceDiagram
             DB-->>Backend: Stats created
         end
         
-        Backend->>Backend: Generate JWT token
-        Backend-->>Frontend: Success + JWT token
-        Frontend->>Frontend: Store JWT in localStorage
+        Backend->>Backend: Create session
+        Backend-->>Frontend: Success + Session
+        Frontend->>Frontend: Session managed by cookie
         Frontend-->>User: Redirect to dashboard
     end
 ```
@@ -123,8 +123,8 @@ sequenceDiagram
    - Verify password complexity requirements
    - Check for duplicate usernames and emails
    - Hash passwords using PBKDF2 or bcrypt with salt
-   - Generate secure JWT tokens with expiration
-   - Set JWT in HttpOnly, Secure, SameSite=Strict cookie
+   - Generate secure Sessions with expiration
+   - Set session in HttpOnly, Secure, SameSite=Strict cookie
 
 2. **OAuth Processing**
    - Exchange authorization code for access token
@@ -180,7 +180,7 @@ INSERT INTO PlayerStats (
 
 1. **Password Storage**: Never store plain text passwords; always use cryptographic hashing
 2. **Input Sanitization**: All user inputs must be sanitized on both frontend and backend
-3. **JWT Security**: 
+3. **Session Security**: 
    - Store tokens in HttpOnly, Secure, SameSite=Strict cookies
    - Not accessible via JavaScript (protects against XSS attacks)
    - Tokens should have reasonable expiration times (e.g., 24 hours)

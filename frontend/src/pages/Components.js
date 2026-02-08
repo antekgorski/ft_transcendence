@@ -1,6 +1,8 @@
 import React, { useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
+import api from '../utils/api';
 
 
 function Template({ children }) {
@@ -29,17 +31,21 @@ function Template({ children }) {
 }
 
 function LogoutButton() {
+  const navigate = useNavigate();
   const { setUser } = useContext(AuthContext);
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout/`, {
-        method: 'POST',
-        credentials: 'include',
-      });
+      await api.post('/auth/logout/');
       setUser(null);
+      localStorage.removeItem('user');
+      navigate('/');
     } catch (err) {
       console.error('Logout error:', err);
+      // Still log out locally even if backend request fails
+      setUser(null);
+      localStorage.removeItem('user');
+      navigate('/');
     }
   };
 
