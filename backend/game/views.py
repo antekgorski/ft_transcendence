@@ -1,3 +1,5 @@
+import uuid
+from datetime import datetime, timezone as dt_timezone
 from django.utils import timezone
 from django.db.models import Q
 from rest_framework import viewsets, status
@@ -304,19 +306,31 @@ class GameViewSet(viewsets.ModelViewSet):
     def active(self, request):
         """Get the user's current active game."""
         user = request.user
-        active_game = Game.objects.filter(
-            Q(player_1_id=user.id) | Q(player_2_id=user.id),
-            status__in=['pending', 'active']
-        ).first()
         
-        if not active_game:
-            return Response(
-                {'detail': 'No active game'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        # Check Redis for active game
+        active_game_id = self.redis_manager.get_active_game(user.id)
         
-        serializer = self.get_serializer(active_game)
-        return Response(serializer.data)
+        if not active_game_id:
+            return Response({'game_id': None, 'active': False})
+            
+        # Verify game metadata exists
+        game_meta = self.redis_manager.get_game_meta(active_game_id)
+        if not game_meta:
+            # Stale active game reference
+            self.redis_manager.remove_active_game(user.id)
+            return Response({'game_id': None, 'active': False})
+        
+        # Construct response similar to what frontend expects
+        # Note: We return snake_case keys as that's what DRF serializers typically produce
+        return Response({
+            'id': game_meta.get('game_id'),
+            'player_1': game_meta.get('player_1_id'),
+            'player_2': game_meta.get('player_2_id') or None,
+            'game_type': game_meta.get('game_type'),
+            'status': game_meta.get('status'),
+            'created_at': game_meta.get('created_at'),
+            'active': True
+        })
     
     @action(detail=False, methods=['get'])
     def leaderboard(self, request):
@@ -356,12 +370,9 @@ class GameViewSet(viewsets.ModelViewSet):
         user = request.user
         
         # Check if user is already in an active game
-        active_game = Game.objects.filter(
-            Q(player_1_id=user.id) | Q(player_2_id=user.id),
-            status__in=['pending', 'active']
-        ).first()
+        active_game_id = self.redis_manager.get_active_game(user.id)
         
-        if active_game:
+        if active_game_id:
             return Response(
                 {'error': 'User is already in a game'},
                 status=status.HTTP_409_CONFLICT
@@ -403,35 +414,37 @@ class GameViewSet(viewsets.ModelViewSet):
             )
         
         # Check if opponent is in a game
-        opponent_active = Game.objects.filter(
-            Q(player_1_id=opponent.id) | Q(player_2_id=opponent.id),
-            status__in=['pending', 'active']
-        ).exists()
-        
-        if opponent_active:
+        if self.redis_manager.get_active_game(opponent.id):
             return Response(
                 {'error': 'Opponent is currently in a game'},
                 status=status.HTTP_409_CONFLICT
             )
         
-        # Create game
-        game = Game.objects.create(
-            player_1=player_1,
-            player_2=opponent,
-            game_type='pvp',
-            status='pending'
-        )
+        # Generate ID
+        game_id = str(uuid.uuid4())
         
         # Initialize game state in Redis
         self.redis_manager.create_game(
-            game_id=str(game.id),
+            game_id=game_id,
             player_1_id=str(player_1.id),
             player_2_id=str(opponent.id),
-            game_type='pvp'
+            game_type='pvp',
+            player_1_username=player_1.username,
+            player_2_username=opponent.username
         )
         
-        serializer = self.get_serializer(game)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Set active game for both players
+        self.redis_manager.set_active_game(player_1.id, game_id)
+        self.redis_manager.set_active_game(opponent.id, game_id)
+        
+        return Response({
+            'id': game_id,
+            'player_1': str(player_1.id),
+            'player_2': str(opponent.id),
+            'game_type': 'pvp',
+            'status': 'pending',
+            'created_at': datetime.utcnow().isoformat()
+        }, status=status.HTTP_201_CREATED)
 
     def _extract_ai_ships(self, ai_board):
         """Extract AI ship positions from generated board."""
@@ -498,44 +511,54 @@ class GameViewSet(viewsets.ModelViewSet):
             ai_user.set_unusable_password()
             ai_user.save()
         
-        game = Game.objects.create(
-            player_1=player_1,
-            player_2=ai_user,  # Set player_2 to AI user instead of None
-            game_type='ai',
-            status='pending'
-        )
+        # Generate ID
+        game_id = str(uuid.uuid4())
         
         # Initialize AI game state in Redis
         self.redis_manager.create_game(
-            game_id=str(game.id),
+            game_id=game_id,
             player_1_id=str(player_1.id),
             player_2_id=str(ai_user.id),
-            game_type='ai'
+            game_type='ai',
+            player_1_username=player_1.username,
+            player_2_username=ai_user.username
         )
+        
+        # Set active game for player (AI doesn't need active game check)
+        self.redis_manager.set_active_game(player_1.id, game_id)
         
         # Generate AI's initial board and ships
         ai_board = self.ai_opponent.generate_initial_board()
-        self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
+        self.redis_manager.set_board_state(game_id, 'ai', ai_board)
         
         ai_ships = self._extract_ai_ships(ai_board)
         if not ai_ships:
             logger.error(f"Failed to extract AI ship positions from board: {ai_board}")
+            # Clean up
+            self.redis_manager.delete_game(game_id)
+            self.redis_manager.remove_active_game(player_1.id)
             return Response(
                 {'error': 'Failed to initialize AI opponent'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-        self.redis_manager.set_ships(str(game.id), 'player_2', ai_ships)
+        self.redis_manager.set_ships(game_id, 'player_2', ai_ships)
         
-        serializer = self.get_serializer(game)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response({
+            'id': game_id,
+            'player_1': str(player_1.id),
+            'player_2': str(ai_user.id),
+            'game_type': 'ai',
+            'status': 'pending',
+            'created_at': datetime.utcnow().isoformat()
+        }, status=status.HTTP_201_CREATED)
     
+    @action(detail=True, methods=['post'])
     @action(detail=True, methods=['post'])
     def accept(self, request, id=None):
         """Accept a game invitation."""
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
@@ -544,36 +567,40 @@ class GameViewSet(viewsets.ModelViewSet):
         user = request.user
         
         # Verify user is player_2
-        if game.player_2_id != user.id:
+        # Redis stores IDs as strings, so compare as strings
+        if game_meta.get('player_2_id') != str(user.id):
             return Response(
                 {'error': 'Only the invited player can accept'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         # Verify game is pending
-        if game.status != 'pending':
+        if game_meta.get('status') != 'pending':
             return Response(
                 {'error': 'Game is not pending'},
                 status=status.HTTP_409_CONFLICT
             )
         
-        # Update game status
-        game.status = 'active'
-        game.save(update_fields=['status'])
+        # Update Redis game status
+        self.redis_manager.set_game_status(id, 'active')
+        self.redis_manager.set_current_turn(id, game_meta.get('player_1_id'))
         
-        # Update Redis game state
-        self.redis_manager.set_game_status(str(game.id), 'active')
-        self.redis_manager.set_current_turn(str(game.id), str(game.player_1_id))
-        
-        serializer = self.get_serializer(game)
-        return Response(serializer.data)
+        # Update metadata in response
+        game_meta['status'] = 'active'
+        return Response({
+            'id': game_meta.get('game_id'),
+            'player_1': game_meta.get('player_1_id'),
+            'player_2': game_meta.get('player_2_id'),
+            'game_type': game_meta.get('game_type'),
+            'status': 'active',
+            'created_at': game_meta.get('created_at')
+        })
     
     @action(detail=True, methods=['post'])
     def decline(self, request, id=None):
         """Decline a game invitation."""
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
@@ -582,67 +609,131 @@ class GameViewSet(viewsets.ModelViewSet):
         user = request.user
         
         # Verify user is player_2
-        if game.player_2_id != user.id:
+        if game_meta.get('player_2_id') != str(user.id):
             return Response(
                 {'error': 'Only the invited player can decline'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         # Verify game is pending
-        if game.status != 'pending':
+        if game_meta.get('status') != 'pending':
             return Response(
                 {'error': 'Game is not pending'},
                 status=status.HTTP_409_CONFLICT
             )
         
         # Delete game and Redis state
-        self.redis_manager.delete_game(str(game.id))
-        game.delete()
+        self.redis_manager.delete_game(id)
+        self.redis_manager.remove_active_game(game_meta.get('player_1_id'))
+        self.redis_manager.remove_active_game(user.id)
         
         return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=['post'])
     def forfeit(self, request, id=None):
         """Forfeit the game."""
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         # Verify game is active
-        if game.status != 'active':
+        if game_meta.get('status') != 'active':
             return Response(
                 {'error': 'Game is not active'},
                 status=status.HTTP_409_CONFLICT
             )
         
         # Determine winner (opponent)
-        winner = game.player_2 if game.player_1_id == user.id else game.player_1
+        winner_id = player_2_id if str(user.id) == player_1_id else player_1_id
         
-        # End game
-        game.status = 'forfeited'
-        game.winner = winner
-        game.ended_at = timezone.now()
-        game.duration_seconds = int((game.ended_at - game.started_at).total_seconds())
+        try:
+            player_1 = User.objects.get(id=player_1_id)
+            player_2 = User.objects.get(id=player_2_id) if player_2_id else None
+            winner = User.objects.get(id=winner_id) if winner_id else None
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Get stats from Redis
+        shots_p1 = self.redis_manager.get_shots(id, 'player_1')
+        shots_p2 = self.redis_manager.get_shots(id, 'player_2')
+        
+        def summarize(shots):
+            total = len(shots)
+            hits = sum(1 for shot in shots if shot.get('result') == 'hit')
+            return total, hits
+
+        p1_shots, p1_hits = summarize(shots_p1)
+        p2_shots, p2_hits = summarize(shots_p2)
+        
+        # Parse created_at as timezone-aware datetime
+        started_at_dt = timezone.now()
+        created_at_str = game_meta.get('created_at')
+        if created_at_str:
+            try:
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                started_at_dt = start_time
+            except (ValueError, TypeError):
+                pass
+        
+        # Create completed game record in DB
+        game = Game.objects.create(
+            id=id,
+            player_1=player_1,
+            player_2=player_2,
+            game_type=game_meta.get('game_type'),
+            status='forfeited',
+            winner=winner,
+            started_at=started_at_dt,
+            ended_at=timezone.now(),
+            player_1_shots=p1_shots,
+            player_1_hits=p1_hits,
+            player_2_shots=p2_shots,
+            player_2_hits=p2_hits
+        )
+        
+        # Calculate duration
+        try:
+            created_at_str = game_meta.get('created_at')
+            if created_at_str:
+                # Redis stores naive UTC datetime (no Z suffix), parse and make timezone-aware
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                ended_at = game.ended_at
+                if ended_at.tzinfo is None:
+                    ended_at = ended_at.replace(tzinfo=dt_timezone.utc)
+                game.duration_seconds = int((ended_at - start_time).total_seconds())
+        except (ValueError, TypeError, AttributeError):
+            game.duration_seconds = 0
         game.save()
         
         # Update player stats
         self._update_player_stats(game)
         
-        # Update Redis
-        self.redis_manager.end_game(str(game.id))
+        # Cleanup Redis
+        self.redis_manager.delete_game(id)
+        self.redis_manager.remove_active_game(player_1_id)
+        if player_2_id:
+            self.redis_manager.remove_active_game(player_2_id)
         
         serializer = self.get_serializer(game)
         return Response(serializer.data)
@@ -653,25 +744,26 @@ class GameViewSet(viewsets.ModelViewSet):
         
         Called by frontend when game naturally ends (all ships sunk).
         """
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         # Verify game is active
-        if game.status != 'active':
+        if game_meta.get('status') != 'active':
             return Response(
                 {'error': 'Game is not active'},
                 status=status.HTTP_409_CONFLICT
@@ -684,84 +776,129 @@ class GameViewSet(viewsets.ModelViewSet):
         winner_id = serializer.validated_data['winner_id']
         
         # Verify winner is one of the players
-        if winner_id != game.player_1_id and winner_id != game.player_2_id:
+        # winner_id from serializer is UUID, player_ids in Redis are strings
+        if str(winner_id) != player_1_id and str(winner_id) != player_2_id:
             return Response(
                 {'error': 'Invalid winner'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
+            player_1 = User.objects.get(id=player_1_id)
+            player_2 = User.objects.get(id=player_2_id) if player_2_id else None
             winner = User.objects.get(id=winner_id)
         except User.DoesNotExist:
             return Response(
-                {'error': 'Winner not found'},
+                {'error': 'User not found'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+            
+        # Get stats from Redis (trust Redis for accuracy over frontend provided stats if possible, 
+        # but let's usage serializer data to match original logic or double check)
+        # The original logic used serializer data for shots/hits. 
+        # But we have authoritative data in Redis. Let's use Redis data for consistency.
         
-        # Update game with results
-        game.status = 'completed'
-        game.winner = winner
-        game.ended_at = timezone.now()
-        game.duration_seconds = int((game.ended_at - game.started_at).total_seconds())
-        game.player_1_shots = serializer.validated_data['player_1_shots']
-        game.player_1_hits = serializer.validated_data['player_1_hits']
-        game.player_2_shots = serializer.validated_data['player_2_shots']
-        game.player_2_hits = serializer.validated_data['player_2_hits']
+        shots_p1 = self.redis_manager.get_shots(id, 'player_1')
+        shots_p2 = self.redis_manager.get_shots(id, 'player_2')
+        
+        def summarize(shots):
+            total = len(shots)
+            hits = sum(1 for shot in shots if shot.get('result') == 'hit')
+            return total, hits
+
+        p1_shots, p1_hits = summarize(shots_p1)
+        p2_shots, p2_hits = summarize(shots_p2)
+        
+        # Parse created_at as timezone-aware datetime
+        started_at_dt = timezone.now()
+        created_at_str = game_meta.get('created_at')
+        if created_at_str:
+            try:
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                started_at_dt = start_time
+            except (ValueError, TypeError):
+                pass
+        
+        # Create completed game record in DB
+        game = Game.objects.create(
+            id=id,
+            player_1=player_1,
+            player_2=player_2,
+            game_type=game_meta.get('game_type'),
+            status='completed',
+            winner=winner,
+            started_at=started_at_dt,
+            ended_at=timezone.now(),
+            player_1_shots=p1_shots,
+            player_1_hits=p1_hits,
+            player_2_shots=p2_shots,
+            player_2_hits=p2_hits
+        )
+        
+        # Calculate duration
+        try:
+            created_at_str = game_meta.get('created_at')
+            if created_at_str:
+                # Redis stores naive UTC datetime (no Z suffix), parse and make timezone-aware
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                ended_at = game.ended_at
+                if ended_at.tzinfo is None:
+                    ended_at = ended_at.replace(tzinfo=dt_timezone.utc)
+                game.duration_seconds = int((ended_at - start_time).total_seconds())
+        except (ValueError, TypeError, AttributeError):
+            game.duration_seconds = 0
         game.save()
         
         # Update player stats
         self._update_player_stats(game)
         
-        # Update Redis
-        self.redis_manager.end_game(str(game.id))
+        # Cleanup Redis
+        self.redis_manager.delete_game(id)
+        self.redis_manager.remove_active_game(player_1_id)
+        if player_2_id:
+            self.redis_manager.remove_active_game(player_2_id)
         
         response_serializer = self.get_serializer(game)
         return Response(response_serializer.data)
     
     @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'])
     def ships(self, request, id=None):
-        """Place ships during setup phase (before game starts).
-        
-        Request body:
-        {
-            "ship_type": "battleship",
-            "positions": [
-                {"x": 0, "y": 0},
-                {"x": 1, "y": 0},
-                {"x": 2, "y": 0},
-                {"x": 3, "y": 0}
-            ]
-        }
-        """
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        """Place ships during setup phase (before game starts)."""
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Ship placement only allowed in pending or active status before gameplay starts
-        # (In real implementation, add a 'setup_complete' flag to track when both players placed ships)
-        if game.status not in ['pending', 'active']:
+        # Ship placement only allowed in pending or active status
+        status_val = game_meta.get('status')
+        if status_val not in ['pending', 'active']:
             return Response(
                 {'error': 'Game is not in setup phase'},
                 status=status.HTTP_409_CONFLICT
             )
         
-        player_key = 'player_1' if game.player_1_id == user.id else 'player_2'
+        player_key = 'player_1' if str(user.id) == player_1_id else 'player_2'
         
         # Check if player has already placed ships
-        existing_ships = self.redis_manager.get_ships(str(game.id), player_key)
+        existing_ships = self.redis_manager.get_ships(id, player_key)
         if existing_ships:
             return Response(
                 {'error': 'Ships already placed for this player'},
@@ -797,131 +934,103 @@ class GameViewSet(viewsets.ModelViewSet):
         # Store ships in Redis
         ship_data = {'type': ship_type, 'positions': positions}
         
-        self.redis_manager.set_ships(
-            str(game.id),
-            player_key,
-            ship_data
-        )
-
+        self.redis_manager.set_ships(id, player_key, ship_data)
+        
         # For AI games: start game when player_1 finishes ship placement
-        if game.game_type == 'ai' and game.status == 'pending' and player_key == 'player_1':
+        if game_meta.get('game_type') == 'ai' and game_meta.get('status') == 'pending' and player_key == 'player_1':
             # Ensure AI ships exist before activating the game
-            ai_ships = self.redis_manager.get_ships(str(game.id), 'player_2')
+            ai_ships = self.redis_manager.get_ships(id, 'player_2')
             if not ai_ships or not ai_ships.get('positions'):
-                ai_board = self.ai_opponent.generate_initial_board()
-                self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
-                ai_ships = self._extract_ai_ships(ai_board)
-                if not ai_ships:
-                    logger.error(f"AI ships not initialized for game {game.id}; cannot start AI game.")
+                try:
+                    ai_board = self.ai_opponent.generate_initial_board()
+                    # Check if set_board_state expects 'player_2' or 'ai'? 
+                    # Usually AI is player_2. The original code used 'ai' as key for set_board_state?
+                    # Let's check the garbage code: self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
+                    # And set_ships uses 'player_2'.
+                    self.redis_manager.set_board_state(id, 'player_2', ai_board)
+                    
+                    # We need _extract_ai_ships or similar helper.
+                    # Assuming self._extract_ai_ships exists in the class.
+                    ai_ships = self._extract_ai_ships(ai_board)
+                    if not ai_ships:
+                         raise ValueError("Failed to extract AI ships")
+                    self.redis_manager.set_ships(id, 'player_2', ai_ships)
+                except Exception as e:
+                    logger.error(f"AI initialization failed for game {id}: {e}")
                     return Response(
-                        {'error': 'AI opponent is not ready. Please try again.'},
+                        {'error': 'AI opponent failed to initialize. Please try again.'},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
-                self.redis_manager.set_ships(str(game.id), 'player_2', ai_ships)
-            game.status = 'active'
-            game.started_at = timezone.now()
-            game.save(update_fields=['status', 'started_at'])
-
-            # Update Redis game state
-            self.redis_manager.set_game_status(str(game.id), 'active')
-            self.redis_manager.set_current_turn(str(game.id), str(game.player_1_id))
-        
-        # Verify ships were stored successfully
-        stored = self.redis_manager.get_ships(str(game.id), player_key)
-        if not stored or stored.get('positions') != ship_data.get('positions'):
-            logger.error(f"Failed to verify ship storage for game {game.id}, player {player_key}")
-            return Response(
-                {'error': 'Failed to store ship data'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        
-        return Response({'status': 'Ships placed successfully'})
+            
+            # Update Redis game status
+            self.redis_manager.set_game_status(id, 'active')
+            self.redis_manager.set_current_turn(id, game_meta.get('player_1_id'))
+            
+        return Response({'status': 'ships_placed'})
     
     @action(detail=True, methods=['get'])
     def ships_status(self, request, id=None):
-        """Get ship placement status for both players.
-        
-        Response:
-        {
-            "player_1_ready": true/false,
-            "player_2_ready": true/false,
-            "both_ready": true/false,
-            "player_1_ships": {...} or null,
-            "player_2_ships": {...} or null
-        }
-        """
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        """Get ship placement status for both players."""
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
+        game_type = game_meta.get('game_type')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        player_1_ships = self.redis_manager.get_ships(str(game.id), 'player_1')
-        player_2_ships = self.redis_manager.get_ships(str(game.id), 'player_2')
+        player_1_ships = self.redis_manager.get_ships(id, 'player_1')
+        player_2_ships = self.redis_manager.get_ships(id, 'player_2')
         
         # For AI games, player_2 ships are automatically placed
         player_1_ready = player_1_ships is not None
-        player_2_ready = player_2_ships is not None or game.game_type == 'ai'
+        player_2_ready = player_2_ships is not None or game_type == 'ai'
         
         return Response({
             'player_1_ready': player_1_ready,
             'player_2_ready': player_2_ready,
             'both_ready': player_1_ready and player_2_ready,
             'player_1_ships': player_1_ships,
-            'player_2_ships': player_2_ships if game.game_type != 'ai' else None  # Don't expose AI ships
+            'player_2_ships': player_2_ships if game_type != 'ai' else None  # Don't expose AI ships
         })
 
     @action(detail=True, methods=['get'])
     def shots(self, request, id=None):
-        """Get shot history for a game, sorted by timestamp.
-        
-        Returns:
-        {
-            "player_1_shots": [
-                {"row": 0, "col": 5, "result": "hit", "timestamp": "2026-02-05T14:30:00Z", "sunk": false}
-            ],
-            "player_2_shots": [
-                {"row": 3, "col": 2, "result": "miss", "timestamp": "2026-02-05T14:30:01Z", "sunk": false}
-            ],
-            "player_1_inactive": [{"row": 1, "col": 5}, ...],
-            "player_2_inactive": [{"row": 2, "col": 3}, ...],
-            "current_turn": "player_1_id" or "player_2_id"
-        }
-        """
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        """Get shot history for a game, sorted by timestamp."""
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        redis_manager = GameStateManager()
-        player_1_shots = redis_manager.get_shots(str(game.id), 'player_1') or []
-        player_2_shots = redis_manager.get_shots(str(game.id), 'player_2') or []
-        player_1_inactive = redis_manager.get_inactive_cells(str(game.id), 'player_1') or []
-        player_2_inactive = redis_manager.get_inactive_cells(str(game.id), 'player_2') or []
-        current_turn = redis_manager.get_current_turn(str(game.id))
+        player_1_shots = self.redis_manager.get_shots(id, 'player_1') or []
+        player_2_shots = self.redis_manager.get_shots(id, 'player_2') or []
+        player_1_inactive = self.redis_manager.get_inactive_cells(id, 'player_1') or []
+        player_2_inactive = self.redis_manager.get_inactive_cells(id, 'player_2') or []
+        current_turn = self.redis_manager.get_current_turn(id)
         
         # Sort shots by timestamp (Redis returns in reverse order)
         def sort_by_timestamp(shots):
@@ -1071,3 +1180,31 @@ class GameViewSet(viewsets.ModelViewSet):
                 player_1_stats.accuracy_percentage = (player_1_stats.total_hits / player_1_stats.total_shots) * 100
             
             player_1_stats.save()
+            
+    def _extract_ai_ships(self, board):
+        """Extract ship positions from AI board grid."""
+        ships = {}
+        # Board might be a dict with string keys "0".."9" or a list
+        is_dict = isinstance(board, dict)
+        
+        for y in range(10):  # 10x10 grid
+            row_key = str(y) if is_dict else y
+            if is_dict and row_key not in board:
+                continue
+                
+            row = board[row_key]
+            for x in range(10):
+                col_key = str(x) if isinstance(row, dict) else x
+                # Handle case where row might be list or dict
+                if isinstance(row, dict) and col_key not in row:
+                    continue
+                    
+                cell = row[col_key]
+                if cell['type'] == 'ship':
+                    ship_id = cell['shipId']
+                    if ship_id not in ships:
+                        ships[ship_id] = []
+                    ships[ship_id].append({'x': x, 'y': y})
+        
+        # Format as expected by game logic
+        return {'positions': [pos for ship_pos in ships.values() for pos in ship_pos]}

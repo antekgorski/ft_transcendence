@@ -32,7 +32,7 @@ class GameStateManager:
         self.game_expiration = 86400 * 7  # 7 days
         self.presence_expiration = 300  # 5 minutes
     
-    def create_game(self, game_id, player_1_id, player_2_id, game_type):
+    def create_game(self, game_id, player_1_id, player_2_id, game_type, player_1_username=None, player_2_username=None):
         """Create a new game session in Redis."""
         game_key = f"game:{game_id}"
         
@@ -42,6 +42,8 @@ class GameStateManager:
             'game_id': str(game_id),
             'player_1_id': str(player_1_id),
             'player_2_id': str(normalized_player_2_id),
+            'player_1_username': str(player_1_username or ''),
+            'player_2_username': str(player_2_username or ''),
             'game_type': str(game_type),
             'status': 'pending',
             'created_at': datetime.utcnow().isoformat(),
@@ -61,6 +63,30 @@ class GameStateManager:
         # Delete all keys related to this game
         for key in self.redis_client.keys(f"{game_key}*"):
             self.redis_client.delete(key)
+        
+        # Also need to find and remove user active game mappings if we don't know the user IDs here
+        # But usually we call remove_active_game explicitly
+
+    def set_active_game(self, user_id, game_id):
+        """Map user to their current game."""
+        key = f"user:{user_id}:active_game"
+        self.redis_client.set(key, game_id)
+        self.redis_client.expire(key, self.game_expiration)
+
+    def get_active_game(self, user_id):
+        """Get current game ID for a user."""
+        key = f"user:{user_id}:active_game"
+        return self.redis_client.get(key)
+
+    def remove_active_game(self, user_id):
+        """Remove user's active game mapping."""
+        key = f"user:{user_id}:active_game"
+        self.redis_client.delete(key)
+
+    def get_game_meta(self, game_id):
+        """Get game metadata."""
+        game_key = f"game:{game_id}"
+        return self.redis_client.hgetall(game_key)
     
     def set_game_status(self, game_id, status):
         """Update game status."""
@@ -139,6 +165,23 @@ class GameStateManager:
         grace_time = datetime.fromisoformat(grace_end)
         remaining = (grace_time - datetime.utcnow()).total_seconds()
         return max(0, remaining)
+
+    def set_player_disconnected(self, game_id, player_id):
+        """Record player disconnection time."""
+        key = f"game:{game_id}:disconnected:{player_id}"
+        self.redis_client.set(key, datetime.utcnow().isoformat())
+        self.redis_client.expire(key, self.game_expiration)
+
+    def get_player_disconnected(self, game_id, player_id):
+        """Get player disconnection time."""
+        key = f"game:{game_id}:disconnected:{player_id}"
+        timestamp = self.redis_client.get(key)
+        return datetime.fromisoformat(timestamp) if timestamp else None
+
+    def clear_player_disconnected(self, game_id, player_id):
+        """Clear player disconnection record."""
+        key = f"game:{game_id}:disconnected:{player_id}"
+        self.redis_client.delete(key)
     
     def end_game(self, game_id):
         """Mark game as ended and prepare for cleanup."""
@@ -214,3 +257,8 @@ class GameStateManager:
         inactive_key = f"game:{game_id}:{player_key}:inactive"
         data = self.redis_client.smembers(inactive_key)
         return [json.loads(cell) for cell in data] if data else []
+    def set_board_state(self, game_id, player_key, board_state):
+        """Set board state for a player."""
+        board_key = f"game:{game_id}:{player_key}:board"
+        self.redis_client.set(board_key, json.dumps(board_state))
+        self.redis_client.expire(board_key, self.game_expiration)

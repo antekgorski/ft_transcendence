@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import register, login, get_current_user, logout, set_avatar, update_profile
+from .views import register, login, get_current_user, logout, set_avatar, update_profile, csrf
 # from (42 OAuth)
 from .views import oauth_42_start, oauth_42_callback
 
@@ -11,6 +11,8 @@ urlpatterns = [
     path('login/', login, name='login'),
     # Current user endpoint
     path('me/', get_current_user, name='get_current_user'),
+    # CSRF endpoint
+    path('csrf/', csrf, name='csrf'),
     # Logout endpoint
     path('logout/', logout, name='logout'),
     # Update profile endpoint
