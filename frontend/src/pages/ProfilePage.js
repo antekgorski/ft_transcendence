@@ -4,6 +4,7 @@ import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 import { Template } from './Components';
 import api from '../utils/api';
+import axios from 'axios';
 
 const MEDIA_BASE_URL = process.env.REACT_APP_MEDIA_URL || API_BASE_URL.replace(/\/api\/?$/, '');
 
@@ -347,6 +348,366 @@ function GameHistory() {
   );
 }
 
+function FriendsManager() {
+  const { user } = useContext(AuthContext);
+  const [friends, setFriends] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [addFriendId, setAddFriendId] = useState('');
+  const [addFriendError, setAddFriendError] = useState('');
+  const [addFriendSuccess, setAddFriendSuccess] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [activeTab, setActiveTab] = useState('friends'); // 'friends' or 'requests'
+
+  const fetchFriends = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/social/friendships/accepted/`, {
+        withCredentials: true,
+      });
+      setFriends(response.data || []);
+    } catch (err) {
+      console.error('Failed to fetch friends:', err);
+    }
+  };
+
+  const fetchPendingRequests = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/social/friendships/pending/`, {
+        withCredentials: true,
+      });
+      setPendingRequests(response.data || []);
+    } catch (err) {
+      console.error('Failed to fetch pending requests:', err);
+    }
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        await Promise.all([fetchFriends(), fetchPendingRequests()]);
+      } catch (err) {
+        setError('Failed to load friends data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user?.id) {
+      fetchData();
+    }
+  }, [user?.id]);
+
+  const handleAddFriend = async (e) => {
+    e.preventDefault();
+    setAddFriendError('');
+    setAddFriendSuccess('');
+
+    if (!addFriendId.trim()) {
+      setAddFriendError('Please enter a user ID');
+      return;
+    }
+
+    // Basic UUID validation
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(addFriendId.trim())) {
+      setAddFriendError('Invalid user ID format');
+      return;
+    }
+
+    setIsAdding(true);
+    try {
+      await axios.post(
+        `${API_BASE_URL}/social/friendships/`,
+        { user_id: addFriendId.trim() },
+        { withCredentials: true }
+      );
+      setAddFriendSuccess('Friend request sent successfully!');
+      setAddFriendId('');
+      await fetchFriends();
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to send friend request';
+      setAddFriendError(errorMsg);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleAcceptRequest = async (friendshipId) => {
+    try {
+      await axios.post(
+        `${API_BASE_URL}/social/friendships/${friendshipId}/accept/`,
+        {},
+        { withCredentials: true }
+      );
+      await Promise.all([fetchFriends(), fetchPendingRequests()]);
+    } catch (err) {
+      console.error('Failed to accept friend request:', err);
+      setError('Failed to accept friend request');
+    }
+  };
+
+  const handleRejectRequest = async (friendshipId) => {
+    try {
+      await axios.post(
+        `${API_BASE_URL}/social/friendships/${friendshipId}/reject/`,
+        {},
+        { withCredentials: true }
+      );
+      await fetchPendingRequests();
+    } catch (err) {
+      console.error('Failed to reject friend request:', err);
+      setError('Failed to reject friend request');
+    }
+  };
+
+  const handleRemoveFriend = async (friendshipId) => {
+    if (!window.confirm('Are you sure you want to remove this friend?')) {
+      return;
+    }
+
+    try {
+      await axios.delete(
+        `${API_BASE_URL}/social/friendships/${friendshipId}/`,
+        { withCredentials: true }
+      );
+      await fetchFriends();
+    } catch (err) {
+      console.error('Failed to remove friend:', err);
+      setError('Failed to remove friend');
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  return (
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-slate-700">
+      <h2 className="text-2xl font-bold text-white mb-4">Friends</h2>
+
+      {error && (
+        <div className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-2 rounded mb-4">
+          {error}
+        </div>
+      )}
+
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6 border-b border-slate-600">
+        <button
+          onClick={() => setActiveTab('friends')}
+          className={`px-4 py-2 font-semibold transition-colors ${
+            activeTab === 'friends'
+              ? 'text-emerald-400 border-b-2 border-emerald-400'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          My Friends ({friends.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('requests')}
+          className={`px-4 py-2 font-semibold transition-colors relative ${
+            activeTab === 'requests'
+              ? 'text-emerald-400 border-b-2 border-emerald-400'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          Pending Requests ({pendingRequests.length})
+          {pendingRequests.length > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              {pendingRequests.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('add')}
+          className={`px-4 py-2 font-semibold transition-colors ${
+            activeTab === 'add'
+              ? 'text-emerald-400 border-b-2 border-emerald-400'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          Add Friend
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-gray-400">Loading...</p>
+      ) : (
+        <>
+          {/* My Friends Tab */}
+          {activeTab === 'friends' && (
+            <div>
+              {friends.length === 0 ? (
+                <p className="text-gray-400">No friends yet. Add some friends to play with!</p>
+              ) : (
+                <div className="space-y-3">
+                  {friends.map((friendship) => {
+                    // Determine which user is the friend (not current user)
+                    const friend = friendship.requester_data.id === user.id 
+                      ? friendship.addressee_data 
+                      : friendship.requester_data;
+                    const avatarSrc = friend.avatar_url?.startsWith('http') 
+                      ? friend.avatar_url 
+                      : `${MEDIA_BASE_URL}/media/${friend.avatar_url}`;
+
+                    return (
+                      <div
+                        key={friendship.id}
+                        className="flex items-center justify-between bg-slate-700/50 p-4 rounded-lg"
+                      >
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={avatarSrc}
+                            alt={friend.username}
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                          <div>
+                            <p className="text-white font-semibold">{friend.display_name}</p>
+                            <p className="text-gray-400 text-sm">@{friend.username}</p>
+                            <p className="text-gray-500 text-xs">
+                              ID: {friend.id}
+                              <button
+                                onClick={() => copyToClipboard(friend.id)}
+                                className="ml-2 text-emerald-400 hover:text-emerald-300"
+                                title="Copy ID"
+                              >
+                                📋
+                              </button>
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveFriend(friendship.id)}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-white font-semibold transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Pending Requests Tab */}
+          {activeTab === 'requests' && (
+            <div>
+              {pendingRequests.length === 0 ? (
+                <p className="text-gray-400">No pending friend requests</p>
+              ) : (
+                <div className="space-y-3">
+                  {pendingRequests.map((friendship) => {
+                    const requester = friendship.requester_data;
+                    const avatarSrc = requester.avatar_url?.startsWith('http') 
+                      ? requester.avatar_url 
+                      : `${MEDIA_BASE_URL}/media/${requester.avatar_url}`;
+
+                    return (
+                      <div
+                        key={friendship.id}
+                        className="flex items-center justify-between bg-slate-700/50 p-4 rounded-lg"
+                      >
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={avatarSrc}
+                            alt={requester.username}
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                          <div>
+                            <p className="text-white font-semibold">{requester.display_name}</p>
+                            <p className="text-gray-400 text-sm">@{requester.username}</p>
+                            <p className="text-gray-500 text-xs">wants to be your friend</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleAcceptRequest(friendship.id)}
+                            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-md text-white font-semibold transition-colors"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => handleRejectRequest(friendship.id)}
+                            className="px-4 py-2 bg-slate-600 hover:bg-slate-700 rounded-md text-white font-semibold transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Add Friend Tab */}
+          {activeTab === 'add' && (
+            <div>
+              <div className="bg-blue-500/20 border border-blue-500 text-blue-200 px-4 py-3 rounded mb-4">
+                <p className="font-semibold mb-2">How to add friends:</p>
+                <ol className="list-decimal list-inside space-y-1 text-sm">
+                  <li>Ask your friend for their User ID</li>
+                  <li>They can find it in the "My Friends" tab</li>
+                  <li>Copy and paste their ID below</li>
+                  <li>Your ID: <span className="font-mono bg-slate-700 px-2 py-1 rounded">{user?.id}</span>
+                    <button
+                      onClick={() => copyToClipboard(user?.id)}
+                      className="ml-2 text-emerald-400 hover:text-emerald-300"
+                      title="Copy my ID"
+                    >
+                      📋 Copy
+                    </button>
+                  </li>
+                </ol>
+              </div>
+
+              <form onSubmit={handleAddFriend} className="space-y-4">
+                <div>
+                  <label className="block text-gray-300 mb-2 font-semibold">
+                    Friend's User ID
+                  </label>
+                  <input
+                    type="text"
+                    value={addFriendId}
+                    onChange={(e) => setAddFriendId(e.target.value)}
+                    placeholder="e.g., b6e0abbd-024c-4aa6-b2a7-d4fadb4d508b"
+                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400"
+                  />
+                </div>
+
+                {addFriendError && (
+                  <div className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-2 rounded">
+                    {addFriendError}
+                  </div>
+                )}
+
+                {addFriendSuccess && (
+                  <div className="bg-emerald-500/20 border border-emerald-500 text-emerald-200 px-4 py-2 rounded">
+                    {addFriendSuccess}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isAdding}
+                  className="w-full px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-500 rounded-md text-white font-semibold transition-colors"
+                >
+                  {isAdding ? 'Sending...' : 'Send Friend Request'}
+                </button>
+              </form>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function Body() {
   const navigate = useNavigate();
   return (
@@ -366,6 +727,7 @@ function Body() {
         <PlayerStats />
         <Avatar />
       </div>
+      <FriendsManager />
       <GameHistory />
     </div>
   );
