@@ -1006,6 +1006,12 @@ function Body() {
 
   // Funkcja resetowania gry do nowej rozgrywki
   const resetGameForNewRound = () => {
+    // Disconnect from WebSocket
+    if (socketRef.current) {
+      gameSocket.disconnect();
+      socketRef.current = null;
+    }
+    
     // Clear all game state
     setGameId(null);
     setGameInitialized(false);
@@ -1015,36 +1021,18 @@ function Body() {
     setEnemyBoard(createEmptyBoard());
     setIsPlacingShips(true);
     setOrientation('horizontal');
-    setStatusMessage('Place your ships on your board.');
+    setStatusMessage('Choose a game mode to start.');
     setPlacedShips([]);
     setIsMyTurn(false);
     setIsWaitingForResponse(false);
     setShotHistory([]);
     initializingRef.current = false;
-    setGameLoading(true);
+    setGameLoading(false);
+    setError(null);
     
-    // Reinitialize game
-    const initializeNewGame = async () => {
-      try {
-        const response = await axios.post(
-          `${API_BASE_URL}/games/`,
-          { game_type: 'ai' },
-          { withCredentials: true }
-        );
-        setGameId(response.data.id);
-        setGameInitialized(true);
-        setStatusMessage('Game created! Place your ships on your board.');
-        setError(null);
-      } catch (err) {
-        const errorMsg = err.response?.data?.error || err.response?.data?.detail || 'Failed to create game';
-        setError(errorMsg);
-        setStatusMessage('Error creating game. Please try again.');
-      } finally {
-        setGameLoading(false);
-      }
-    };
-    
-    initializeNewGame();
+    // Reset lobby selections
+    setSelectedGameType('ai');
+    setManualOpponentId('');
   };
 
   const handleManualCreateGame = async () => {
