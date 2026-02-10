@@ -1517,10 +1517,15 @@ function Body() {
         </div>
       )}
 
-      {!gameLoading && (gameResult !== null || !gameId) && (
+      {!gameLoading && (
         <div className="max-w-6xl mx-auto mb-6 px-4">
           <div className="bg-slate-800/60 border border-slate-600 rounded-lg p-4">
             <h3 className="text-lg font-semibold mb-3">Create New Game</h3>
+            {gameId && gameResult === null && (
+              <p className="text-sm text-slate-300 mb-3">
+                Active game detected. Finish or forfeit it before creating a new one.
+              </p>
+            )}
             <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
               <div className="flex gap-2">
                 <button
@@ -1550,6 +1555,7 @@ function Body() {
               <button
                 className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500"
                 onClick={handleManualCreateGame}
+                disabled={gameId && gameResult === null}
               >
                 Create Game
               </button>
