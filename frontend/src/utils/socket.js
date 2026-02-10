@@ -251,11 +251,23 @@ class GameSocket {
     this._gameEnded = true; // Prevent reconnection attempts
     this.stopHeartbeat();
     if (this.socket) {
-      // Only close if socket is fully OPEN - closing CONNECTING sockets causes warnings
-      if (this.socket.readyState === WebSocket.OPEN) {
-        this.socket.close();
+      try {
+        // Clear handlers to avoid callbacks during teardown
+        this.socket.onopen = null;
+        this.socket.onmessage = null;
+        this.socket.onerror = null;
+        this.socket.onclose = null;
+
+        // Always attempt to close CONNECTING or OPEN sockets to avoid leaks
+        if (
+          this.socket.readyState === WebSocket.CONNECTING ||
+          this.socket.readyState === WebSocket.OPEN
+        ) {
+          this.socket.close();
+        }
+      } finally {
+        this.socket = null;
       }
-      this.socket = null;
     }
     this.gameId = null;
     this.pendingGameId = null;
