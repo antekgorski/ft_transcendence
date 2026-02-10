@@ -866,7 +866,6 @@ class GameViewSet(viewsets.ModelViewSet):
         return Response(response_serializer.data)
     
     @action(detail=True, methods=['post'])
-    @action(detail=True, methods=['post'])
     def ships(self, request, id=None):
         """Place ships during setup phase (before game starts)."""
         game_meta = self.redis_manager.get_game_meta(id)
