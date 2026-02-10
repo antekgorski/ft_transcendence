@@ -1078,7 +1078,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                     start_time = start_time.replace(tzinfo=dt_timezone.utc)
                 started_at_dt = start_time
             except (ValueError, TypeError):
-                pass
+                # If the timestamp is malformed, fall back to the current time.
+                started_at_dt = timezone.now()
         
         game = Game.objects.create(
             id=game_id,
