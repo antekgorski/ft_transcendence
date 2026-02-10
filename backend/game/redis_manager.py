@@ -257,8 +257,3 @@ class GameStateManager:
         inactive_key = f"game:{game_id}:{player_key}:inactive"
         data = self.redis_client.smembers(inactive_key)
         return [json.loads(cell) for cell in data] if data else []
-    def set_board_state(self, game_id, player_key, board_state):
-        """Set board state for a player."""
-        board_key = f"game:{game_id}:{player_key}:board"
-        self.redis_client.set(board_key, json.dumps(board_state))
-        self.redis_client.expire(board_key, self.game_expiration)
