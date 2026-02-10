@@ -692,7 +692,11 @@ class GameViewSet(viewsets.ModelViewSet):
                     start_time = start_time.replace(tzinfo=dt_timezone.utc)
                 started_at_dt = start_time
             except (ValueError, TypeError):
-                pass
+                logger.warning(
+                    "Invalid created_at value for game %s: %r; using default start time.",
+                    id,
+                    created_at_str,
+                )
         
         # Create completed game record in DB
         game = Game.objects.create(
