@@ -201,16 +201,19 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self.send_error('Reconnection active timeout (60s) exceeded. Game forfeited.')
                 # Finalize as forfeit
                 await self._finalize_forfeit(str(self.user.id), game_id)
-                self.redis_manager.delete_game(game_id)
-                self.redis_manager.remove_active_game(str(self.user.id))
-                 # Also remove opponent's active game mapping
+                # Fetch game metadata before deleting the game so we can clean up opponent mappings
                 game_meta = await self._get_game_meta(game_id)
+                # Remove this user's active game mapping
+                self.redis_manager.remove_active_game(str(self.user.id))
+                # Also remove opponent's active game mapping
                 if game_meta:
                     p1 = game_meta.get('player_1_id')
                     p2 = game_meta.get('player_2_id')
                     other = p2 if str(self.user.id) == p1 else p1
                     if other:
                         self.redis_manager.remove_active_game(other)
+                # Finally, delete the game from Redis
+                self.redis_manager.delete_game(game_id)
                 return
             else:
                 # Reconnected in time, clear the record
