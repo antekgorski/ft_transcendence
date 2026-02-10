@@ -129,13 +129,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(
                 f"game_{game_id}",
                 {
-                    'type': 'game_event',
-                    'event_type': 'game_ended',
-                    'data': {
-                        'reason': 'disconnect_timeout',
-                        'forfeited_by': user_id,
-                        'winner_id': other,
-                    }
+                    'type': 'game_ended',
+                    'reason': 'disconnect_timeout',
+                    'forfeited_by': user_id,
+                    'winner_id': other,
                 }
             )
         except Exception as e:
