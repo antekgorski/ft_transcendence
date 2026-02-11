@@ -9,6 +9,7 @@ services:
     container_name: ft_transcendence_nginx
     restart: always
     ports:
+      - "80:80"
       - "8080:443"
     volumes:
       - ./backend/media:/app/media:ro
@@ -80,6 +81,7 @@ services:
       - CHOKIDAR_USEPOLLING=1
       - WATCHPACK_POLLING=1
       - REACT_APP_API_URL=${REACT_APP_API_URL}
+      - WDS_SOCKET_PORT=8080
     expose:
       - "3000"
     volumes:

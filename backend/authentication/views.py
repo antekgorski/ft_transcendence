@@ -213,17 +213,16 @@ def login(request):
 def get_current_user(request):
     """
     Endpoint sprawdzający aktualną sesję użytkownika.
-    Zwraca dane zalogowanego użytkownika lub 401 jeśli niezalogowany.
+    Zwraca dane zalogowanego użytkownika lub null jeśli niezalogowany.
     """
     user_id = request.session.get('user_id')
     
     if not user_id:
         return Response(
             {
-                "error": "Authentication required.",
-                "error_pl": "Wymagane uwierzytelnienie.",
+                "user": None
             },
-            status=status.HTTP_401_UNAUTHORIZED,
+            status=status.HTTP_200_OK,
         )
     
     try:
@@ -243,11 +242,23 @@ def get_current_user(request):
         request.session.flush()
         return Response(
             {
-                "error": "User not found.",
-                "error_pl": "Użytkownik nie znaleziony.",
+                "user": None
             },
-            status=status.HTTP_401_UNAUTHORIZED,
+            status=status.HTTP_200_OK,
         )
+
+
+@ensure_csrf_cookie
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def csrf(request):
+    """
+    Endpoint ensuring CSRF cookie is set.
+    """
+    return Response(
+        {"message": "CSRF cookie set"},
+        status=status.HTTP_200_OK
+    )
 
 
 @api_view(['POST'])

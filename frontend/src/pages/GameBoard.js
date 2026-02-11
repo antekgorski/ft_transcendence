@@ -38,10 +38,10 @@ const createEmptyBoard = () => {
 function Body() {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
-  
+
   // Ref to prevent concurrent initialization
   const initializingRef = useRef(false);
-  
+
   // Stan gry
   const [gameId, setGameId] = useState(null);
   const [gameLoading, setGameLoading] = useState(true);
@@ -49,7 +49,7 @@ function Body() {
   const [gameInitialized, setGameInitialized] = useState(false);
   const [isCreatingGame, setIsCreatingGame] = useState(false);
   const [showLoadingBanner, setShowLoadingBanner] = useState(false);
-  
+
   // Stan planszy gracza (własne statki).
   const [playerBoard, setPlayerBoard] = useState(createEmptyBoard);
   // Stan planszy przeciwnika (gdzie oddajemy strzały).
@@ -60,10 +60,10 @@ function Body() {
   const [orientation, setOrientation] = useState('horizontal');
   // Stan komunikatu dla użytkownika.
   const [statusMessage, setStatusMessage] = useState('Place your ships on your board.');
-  
+
   // Lista statków do rozmieszczenia z ich pozycjami
   const [placedShips, setPlacedShips] = useState([]);
-  
+
   // Stan dla drag and drop
   const [draggedShip, setDraggedShip] = useState(null);
   const [hoverCell, setHoverCell] = useState(null);
@@ -72,13 +72,13 @@ function Body() {
   const dragBaseRef = useRef(null);
   const didDropRef = useRef(false);
   const draggedShipRef = useRef(null);
-  
+
   // Stan dla forfeit
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
   const [gameResult, setGameResult] = useState(null); // 'win', 'lose', or null
   const [redirectCountdown, setRedirectCountdown] = useState(3);
   const [shotHistory, setShotHistory] = useState([]);
-  
+
   // Stan dla WebSocket i gameplay
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
@@ -86,7 +86,7 @@ function Body() {
 
   // Lista dostępnych statków (długości) do rozmieszczenia.
   const allShips = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
-  
+
   // Statki pozostałe do rozmieszczenia (nieużyte jeszcze)
   const remainingShips = allShips.filter((size, index) => {
     // Sprawdzamy ile statków danego rozmiaru już umieściliśmy
@@ -95,12 +95,12 @@ function Body() {
     const beforeIndex = allShips.slice(0, index).filter(s => s === size).length;
     return beforeIndex >= placedCount;
   });
-  
+
   // Funkcja odtwarzająca stan planszy z pozycji statków
   const loadShipsToBoard = (shipPositions) => {
     const newBoard = createEmptyBoard();
     const loadedShips = [];
-    
+
     if (shipPositions && Array.isArray(shipPositions)) {
       // Zaznaczamy wszystkie pozycje na planszy
       shipPositions.forEach((pos) => {
@@ -108,26 +108,26 @@ function Body() {
           newBoard[pos.x][pos.y] = CELL_TYPES.SHIP;
         }
       });
-      
+
       // Grupujemy pozycje według sąsiedztwa aby zidentyfikować poszczególne statki
       const visited = new Set();
-      
+
       shipPositions.forEach((pos, index) => {
         if (!visited.has(index) && pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
           const shipGroup = [pos];
           visited.add(index);
-          
+
           // Rekurencyjnie szukamy wszystkich sąsiadujących pozycji
           let changed = true;
           while (changed) {
             changed = false;
             shipPositions.forEach((otherPos, otherIndex) => {
               if (!visited.has(otherIndex) && otherPos && typeof otherPos.x === 'number' && typeof otherPos.y === 'number') {
-                const isAdjacent = shipGroup.some(sp => 
+                const isAdjacent = shipGroup.some(sp =>
                   (sp.x === otherPos.x && Math.abs(sp.y - otherPos.y) === 1) ||
                   (sp.y === otherPos.y && Math.abs(sp.x - otherPos.x) === 1)
                 );
-                
+
                 if (isAdjacent) {
                   shipGroup.push(otherPos);
                   visited.add(otherIndex);
@@ -136,7 +136,7 @@ function Body() {
               }
             });
           }
-          
+
           if (shipGroup.length > 0) {
             loadedShips.push({
               size: shipGroup.length,
@@ -146,7 +146,7 @@ function Body() {
         }
       });
     }
-    
+
     return { board: newBoard, ships: loadedShips };
   };
 
@@ -180,7 +180,7 @@ function Body() {
     // Process shots in chronological order
     allShots.forEach((shot) => {
       const { row, col, result, inactive, player } = shot;
-      
+
       if (typeof row === 'number' && typeof col === 'number') {
         if (player === 'AI') {
           // Opponent shots go on player board
@@ -190,7 +190,7 @@ function Body() {
             // Opponent shot hit our ship
             newPlayerBoard[row][col] = CELL_TYPES.HIT;
           }
-          
+
           // Apply inactive cells (boundaries around sunk ships) - these are always marked as MISS
           if (inactive && Array.isArray(inactive)) {
             inactive.forEach(({ row: inRow, col: inCol }) => {
@@ -205,7 +205,7 @@ function Body() {
         } else {
           // Player shots go on enemy board
           newEnemyBoard[row][col] = result === 'hit' ? CELL_TYPES.HIT : CELL_TYPES.MISS;
-          
+
           // Apply inactive cells (boundaries around sunk ships)
           if (inactive && Array.isArray(inactive)) {
             inactive.forEach(({ row: inRow, col: inCol }) => {
@@ -262,7 +262,7 @@ function Body() {
       if (gameInitialized || initializingRef.current) {
         return;
       }
-      
+
       try {
         initializingRef.current = true;
         setGameLoading(true);
@@ -270,25 +270,25 @@ function Body() {
         setGameResult(null);
         setIsWaitingForResponse(false);
         setShotHistory([]);
-        
+
         let currentGameId = null;
         try {
           const activeGameResponse = await axios.get(
             `${API_BASE_URL}/games/active/`,
             { withCredentials: true }
           );
-          
+
           if (activeGameResponse.data && activeGameResponse.data.id) {
             currentGameId = activeGameResponse.data.id;
             setGameId(currentGameId);
             setGameInitialized(true);
-            
+
             try {
               const shipsStatusResponse = await axios.get(
                 `${API_BASE_URL}/games/${currentGameId}/ships_status/`,
                 { withCredentials: true }
               );
-              
+
               if (shipsStatusResponse.data.player_1_ready && shipsStatusResponse.data.player_1_ships) {
                 const shipData = shipsStatusResponse.data.player_1_ships;
                 const { board, ships } = loadShipsToBoard(shipData.positions);
@@ -297,7 +297,7 @@ function Body() {
                 setIsPlacingShips(false);
                 setIsMyTurn(false);
                 setIsWaitingForResponse(false);
-                
+
                 // Fetch shots to restore game progress
                 try {
                   const shotsResponse = await axios.get(
@@ -309,7 +309,7 @@ function Body() {
                   setPlayerBoard(restored.playerBoard);
                   setEnemyBoard(restored.enemyBoard);
                   setShotHistory(restored.shotHistory);
-                  
+
                   // Set whose turn it is
                   if (current_turn) {
                     setIsMyTurn(current_turn === user.id.toString());
@@ -320,10 +320,10 @@ function Body() {
                   console.error('Failed to restore shots:', shotsErr);
                   setPlayerBoard(board);
                 }
-                
+
                 setStatusMessage('Ships already placed. Waiting for opponent...');
                 localStorage.removeItem(`game_${currentGameId}_ships`);
-                
+
                 // Connect to WebSocket when loading existing in-progress game
                 gameSocket.connect(currentGameId);
               } else {
@@ -337,7 +337,7 @@ function Body() {
                         restoredBoard[rowIdx][colIdx] = cell;
                       });
                     });
-                    
+
                     setPlayerBoard(restoredBoard);
                     setPlacedShips(ships);
                     setStatusMessage(`Continuing ship placement. ${ships.length}/${allShips.length} ships placed.`);
@@ -351,7 +351,7 @@ function Body() {
             } catch (statusErr) {
               setStatusMessage('Place your ships on your board.');
             }
-            
+
             setError(null);
             setGameLoading(false);
             return;
@@ -361,7 +361,7 @@ function Body() {
             throw activeErr;
           }
         }
-        
+
         let newGameId = null;
         try {
           setIsCreatingGame(true);
@@ -399,7 +399,7 @@ function Body() {
                   setIsPlacingShips(false);
                   setIsMyTurn(false);
                   setIsWaitingForResponse(false);
-                  
+
                   // Fetch shots to restore game progress
                   try {
                     const shotsResponse = await axios.get(
@@ -411,7 +411,7 @@ function Body() {
                     setPlayerBoard(restored.playerBoard);
                     setEnemyBoard(restored.enemyBoard);
                     setShotHistory(restored.shotHistory);
-                    
+
                     // Set whose turn it is
                     if (current_turn) {
                       setIsMyTurn(current_turn === user.id.toString());
@@ -422,10 +422,10 @@ function Body() {
                     console.error('Failed to restore shots:', shotsErr);
                     setPlayerBoard(board);
                   }
-                  
+
                   setStatusMessage('Ships already placed. Waiting for opponent...');
                   localStorage.removeItem(`game_${existingGameId}_ships`);
-                  
+
                   // Connect to WebSocket when loading existing in-progress game
                   gameSocket.connect(existingGameId);
                 } else {
@@ -464,7 +464,7 @@ function Body() {
           throw createErr;
         }
         setIsCreatingGame(false);
-        
+
         const savedState = localStorage.getItem(`game_${newGameId}_ships`);
         if (savedState) {
           try {
@@ -484,7 +484,7 @@ function Body() {
         } else {
           setStatusMessage('Game created! Place your ships on your board.');
         }
-        
+
         setError(null);
       } catch (err) {
         const errorMsg = err.response?.data?.error || err.response?.data?.detail || 'Failed to initialize game';
@@ -544,24 +544,24 @@ function Body() {
       gameSocket.on('game_move', (data) => {
         if (data.move_type === 'shot') {
           const { row, col, result, sunk, sunk_ship: sunkShip, inactive } = data.data; // result: 'hit' or 'miss'
-          
+
           if (data.player_id === user.id) {
             // Our shot result came back
             setIsWaitingForResponse(false);
-            
+
             // Clear any pending timeout
             if (window.shotTimeoutId) {
               clearTimeout(window.shotTimeoutId);
               window.shotTimeoutId = null;
             }
-            
+
             // Use functional setState to avoid stale closure when multiple messages arrive quickly
             setEnemyBoard(prev => {
               const newEnemyBoard = prev.map((r) => r.slice());
               newEnemyBoard[row][col] = result === 'hit' ? CELL_TYPES.HIT : CELL_TYPES.MISS;
               return applyInactiveCells(newEnemyBoard, inactive);
             });
-            
+
             // Add to shot history
             setShotHistory(prev => [...prev, {
               player: 'You',
@@ -576,13 +576,13 @@ function Body() {
             } else {
               setStatusMessage(result === 'hit' ? '🎯 Hit! Shoot again.' : '💧 Miss! AI is shooting...');
             }
-            
+
             // If hit, we keep turn
             setIsMyTurn(result === 'hit');
           } else {
             // Opponent (AI) shot at us
             const hitResult = result === 'hit' ? 'hit' : 'miss';
-            
+
             // Add to shot history
             setShotHistory(prev => [...prev, {
               player: 'AI',
@@ -591,27 +591,27 @@ function Body() {
               result: hitResult,
               sunk: sunk ? `Ship sunk (${sunkShip?.length || 0} cells)` : null
             }]);
-            
+
             setPlayerBoard(prevBoard => {
               const newPlayerBoard = prevBoard.map((r) => r.slice());
               newPlayerBoard[row][col] = hitResult === 'hit' ? CELL_TYPES.HIT : CELL_TYPES.MISS;
-              
+
               // If ship was sunk, explicitly mark all sunk ship cells as HIT
               if (sunk && sunkShip?.length) {
                 sunkShip.forEach(({ row: sunkRow, col: sunkCol }) => {
                   newPlayerBoard[sunkRow][sunkCol] = CELL_TYPES.HIT;
                 });
               }
-              
+
               return applyInactiveCells(newPlayerBoard, inactive);
             });
-            
+
             if (sunk && sunkShip?.length) {
               setStatusMessage(`AI sunk a ship at ${row + 1}, ${col + 1}. They shoot again...`);
             } else {
               setStatusMessage(`AI shot at ${row + 1}, ${col + 1}. ${hitResult === 'hit' ? '🎯 They hit! They shoot again...' : '💧 They missed!'}`);
             }
-            
+
             // If AI missed, it's our turn
             setIsMyTurn(hitResult === 'miss');
           }
@@ -620,6 +620,9 @@ function Body() {
 
       // Handle game ended
       gameSocket.on('game_ended', (data) => {
+        // Stop reconnection attempts - game is finished
+        gameSocket.disconnect();
+
         if (data.winner_id === user.id) {
           setGameResult('win');
           setStatusMessage('🎉 You won!');
@@ -663,7 +666,7 @@ function Body() {
   // Funkcja sprawdzająca, czy statek może zostać ustawiony w danym miejscu.
   const canPlaceShip = (board, row, col, size, dir) => {
     const cellsToCheck = [];
-    
+
     // Zbieramy wszystkie pozycje statku
     if (dir === 'horizontal') {
       // Sprawdzamy czy statek nie wyjdzie poza planszę.
@@ -680,25 +683,25 @@ function Body() {
         cellsToCheck.push({ r, c: col });
       }
     }
-    
+
     // Sprawdzamy każdą komórkę statku i jej sąsiadów
     for (const cell of cellsToCheck) {
       // Jeśli pole nie jest puste, nie możemy postawić statku.
       if (board[cell.r][cell.c] !== CELL_TYPES.EMPTY) return false;
-      
+
       // Sprawdzamy sąsiednie pola (góra, dół, lewo, prawo, przekątne)
       for (let dr = -1; dr <= 1; dr += 1) {
         for (let dc = -1; dc <= 1; dc += 1) {
           if (dr === 0 && dc === 0) continue; // pomijamy samą komórkę
-          
+
           const newR = cell.r + dr;
           const newC = cell.c + dc;
-          
+
           // Sprawdzamy czy sąsiad jest w granicach planszy
           if (newR >= 0 && newR < BOARD_SIZE && newC >= 0 && newC < BOARD_SIZE) {
             // Sprawdzamy czy sąsiad jest częścią tego samego statku
             const isPartOfCurrentShip = cellsToCheck.some(c => c.r === newR && c.c === newC);
-            
+
             // Jeśli sąsiad nie jest częścią tego statku i ma statek, blokujemy
             if (!isPartOfCurrentShip && board[newR][newC] === CELL_TYPES.SHIP) {
               return false;
@@ -707,7 +710,7 @@ function Body() {
         }
       }
     }
-    
+
     // Jeśli wszystkie warunki spełnione, zwracamy true.
     return true;
   };
@@ -737,9 +740,9 @@ function Body() {
       setStatusMessage('Cannot place ship here.');
       return false;
     }
-    
+
     const shipPositions = [];
-    
+
     if (placementDir === 'horizontal') {
       for (let c = col; c < col + shipSize; c += 1) {
         newBoard[row][c] = CELL_TYPES.SHIP;
@@ -752,20 +755,20 @@ function Body() {
       }
     }
     setPlayerBoard(newBoard);
-    
+
     const newPlacedShips = [...baseShips, {
       size: shipSize,
       positions: shipPositions
     }];
     setPlacedShips(newPlacedShips);
-    
+
     if (gameId) {
       localStorage.setItem(`game_${gameId}_ships`, JSON.stringify({
         board: newBoard,
         ships: newPlacedShips
       }));
     }
-    
+
     const shipsLeft = allShips.length - newPlacedShips.length;
     if (shipsLeft > 0) {
       setStatusMessage(`Ship of size ${shipSize} placed. ${shipsLeft} ships remaining.`);
@@ -799,7 +802,7 @@ function Body() {
       dragImage.style.display = 'flex';
       dragImage.style.flexDirection = orientation === 'vertical' ? 'column' : 'row';
       dragImage.style.gap = '2px';
-      
+
       for (let i = 0; i < shipSize; i++) {
         const block = document.createElement('div');
         block.style.width = '16px';
@@ -808,10 +811,10 @@ function Body() {
         block.style.border = '1px solid #047857';
         dragImage.appendChild(block);
       }
-      
+
       document.body.appendChild(dragImage);
       e.dataTransfer.setDragImage(dragImage, 8, 8);
-      
+
       // Clean up after drag starts
       setTimeout(() => document.body.removeChild(dragImage), 0);
     }
@@ -843,7 +846,7 @@ function Body() {
     return () => {
       // Disconnect from WebSocket
       gameSocket.disconnect();
-      
+
       if (dragRestore && !didDropRef.current) {
         setPlayerBoard(dragRestore.board);
         setPlacedShips(dragRestore.ships);
@@ -965,7 +968,7 @@ function Body() {
         return false;
       }
     }
-    
+
     // Check overlaps with other ships
     const posSet = new Set(positions.map(p => `${p.x},${p.y}`));
     for (const ship of placedShips) {
@@ -983,15 +986,15 @@ function Body() {
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           if (dr === 0 && dc === 0) continue; // skip the cell itself
-          
+
           const newR = pos.x + dr;
           const newC = pos.y + dc;
-          
+
           // Check if neighbor is within bounds
           if (newR >= 0 && newR < height && newC >= 0 && newC < width) {
             // Check if neighbor is part of THIS ship (allowed)
             const isPartOfCurrentShip = posSet.has(`${newR},${newC}`);
-            
+
             // If not part of this ship, check if it's occupied by another ship
             if (!isPartOfCurrentShip) {
               for (const ship of placedShips) {
@@ -1025,10 +1028,10 @@ function Body() {
     const startCol = positions[0].y;
 
     // Check bounds first
-    const wouldBeOutOfBounds = newOrientation === 'horizontal' 
+    const wouldBeOutOfBounds = newOrientation === 'horizontal'
       ? (startCol + ship.size > BOARD_SIZE)
       : (startRow + ship.size > BOARD_SIZE);
-    
+
     if (wouldBeOutOfBounds) {
       setStatusMessage('Cannot rotate - ship would go out of bounds.');
       return;
@@ -1067,7 +1070,7 @@ function Body() {
     const shipIndex = placedShips.indexOf(ship);
     const updatedShips = [...placedShips];
     updatedShips[shipIndex] = { size: ship.size, positions: shipPositions };
-    
+
     const newBoard = createEmptyBoard();
     updatedShips.forEach((s) => {
       s.positions.forEach((pos) => {
@@ -1078,7 +1081,7 @@ function Body() {
     setPlacedShips(updatedShips);
     setPlayerBoard(newBoard);
     setOrientation(newOrientation);
-    
+
     if (gameId) {
       localStorage.setItem(`game_${gameId}_ships`, JSON.stringify({
         board: newBoard,
@@ -1095,25 +1098,25 @@ function Body() {
   // Funkcja potwierdzenia forfeit
   const confirmForfeit = async () => {
     setShowForfeitConfirm(false);
-    
+
     if (!gameId) {
       setStatusMessage('Game not ready.');
       return;
     }
-    
+
     try {
       // Send forfeit via WebSocket
       gameSocket.sendForfeit();
-      
+
       await axios.post(
         `${API_BASE_URL}/games/${gameId}/forfeit/`,
         {},
         { withCredentials: true }
       );
-      
+
       // Clean up localStorage when game ends
       localStorage.removeItem(`game_${gameId}_ships`);
-      
+
       setGameResult('lose');
       setRedirectCountdown(3);
       setStatusMessage('Game forfeited. You lose!');
@@ -1125,6 +1128,9 @@ function Body() {
 
   // Funkcja resetowania gry do nowej rozgrywki
   const resetGameForNewRound = () => {
+    // Reset WebSocket state for new game (clears game ended flag)
+    gameSocket.reset();
+
     // Clear all game state
     setGameId(null);
     setGameInitialized(false);
@@ -1141,7 +1147,7 @@ function Body() {
     setShotHistory([]);
     initializingRef.current = false;
     setGameLoading(true);
-    
+
     // Reinitialize game
     const initializeNewGame = async () => {
       try {
@@ -1162,7 +1168,7 @@ function Body() {
         setGameLoading(false);
       }
     };
-    
+
     initializeNewGame();
   };
 
@@ -1235,7 +1241,7 @@ function Body() {
       setPlacedShips([]);
       return;
     }
-    
+
     // Build the final board from successfully placed ships
     const finalBoard = createEmptyBoard();
     newPlacedShips.forEach((ship) => {
@@ -1243,11 +1249,11 @@ function Body() {
         finalBoard[pos.x][pos.y] = CELL_TYPES.SHIP;
       });
     });
-    
+
     setPlayerBoard(finalBoard);
     setPlacedShips(newPlacedShips);
     setStatusMessage('Ships placed randomly! Click "Start Game" to begin.');
-    
+
     if (gameId) {
       localStorage.setItem(`game_${gameId}_ships`, JSON.stringify({
         board: finalBoard,
@@ -1273,22 +1279,22 @@ function Body() {
       setStatusMessage('Waiting for response...');
       return;
     }
-    
+
     if (!gameId) {
       setStatusMessage('Game not ready.');
       return;
     }
-    
+
     // Sprawdzamy czy pole już było strzelane.
     if (enemyBoard[row][col] === CELL_TYPES.HIT || enemyBoard[row][col] === CELL_TYPES.MISS) {
       setStatusMessage('You already shot here.');
       return;
     }
-    
+
     try {
       // Send shot via WebSocket
       const success = gameSocket.sendShot(row, col);
-      
+
       if (!success) {
         setStatusMessage('Connection lost. Please reconnect.');
         return;
@@ -1297,16 +1303,16 @@ function Body() {
       // Mark as waiting for response
       setIsWaitingForResponse(true);
       setStatusMessage(`Shot fired at ${row + 1}, ${col + 1}. Waiting for response...`);
-      
+
       // Safety timeout: clear waiting state after 10 seconds if no response
       const timeoutId = setTimeout(() => {
         setIsWaitingForResponse(false);
         setStatusMessage('Response timeout. Please try again.');
       }, 10000);
-      
+
       // Store timeout ID so we can cancel it when response arrives
       window.shotTimeoutId = timeoutId;
-      
+
     } catch (err) {
       setStatusMessage('Error processing shot.');
     }
@@ -1318,7 +1324,7 @@ function Body() {
       setStatusMessage('You must place at least one ship before starting!');
       return;
     }
-    
+
     if (placedShips.length < allShips.length) {
       setStatusMessage(`You must place all ${allShips.length} ships before starting! (${placedShips.length} placed)`);
       return;
@@ -1367,15 +1373,15 @@ function Body() {
         return;
       }
     }
-    
+
     if (!gameId) {
       setStatusMessage('Game not ready.');
       return;
     }
-    
+
     try {
       const allShipPositions = placedShips.flatMap(ship => ship.positions);
-      
+
       await axios.post(
         `${API_BASE_URL}/games/${gameId}/ships/`,
         {
@@ -1384,11 +1390,11 @@ function Body() {
         },
         { withCredentials: true }
       );
-      
+
       localStorage.removeItem(`game_${gameId}_ships`);
-      
+
       setIsPlacingShips(false);
-      
+
       // Connect to WebSocket for game communication
       gameSocket.connect(
         gameId,
@@ -1401,29 +1407,29 @@ function Body() {
         }
       );
     } catch (err) {
-        // 409 means ships were already placed - this can happen if the game continued from a previous session
-        if (err.response?.status === 409) {
-          localStorage.removeItem(`game_${gameId}_ships`);
-          setIsPlacingShips(false);
-          
-          // Connect to WebSocket
-          gameSocket.connect(
-            gameId,
-            () => {
-              setStatusMessage('Game started! Your turn - shoot on enemy board.');
-              setIsMyTurn(true);
-            },
-            (error) => {
-              setStatusMessage('Connection error: ' + error.message);
-            }
-          );
-          setStatusMessage('Game started! Your turn - shoot on enemy board.');
-        } else {
-          setStatusMessage(err.response?.data?.error || 'Error placing ships. Please try again.');
-        }
+      // 409 means ships were already placed - this can happen if the game continued from a previous session
+      if (err.response?.status === 409) {
+        localStorage.removeItem(`game_${gameId}_ships`);
+        setIsPlacingShips(false);
+
+        // Connect to WebSocket
+        gameSocket.connect(
+          gameId,
+          () => {
+            setStatusMessage('Game started! Your turn - shoot on enemy board.');
+            setIsMyTurn(true);
+          },
+          (error) => {
+            setStatusMessage('Connection error: ' + error.message);
+          }
+        );
+        setStatusMessage('Game started! Your turn - shoot on enemy board.');
+      } else {
+        setStatusMessage(err.response?.data?.error || 'Error placing ships. Please try again.');
+      }
     }
   };
-  
+
   const resetShips = () => {
     setPlayerBoard(createEmptyBoard());
     setPlacedShips([]);
@@ -1630,7 +1636,7 @@ function Body() {
               {/* Tekst przycisku zakończenia */}
               Start Game {isPlacingShips && `(${placedShips.length}/${allShips.length})`}
             </button>
-            
+
             {/* Przycisk forfeit */}
             {!isPlacingShips && gameResult === null && (
               <button
@@ -1640,7 +1646,7 @@ function Body() {
                 Forfeit Game
               </button>
             )}
-            
+
             {/* Przycisk resetowania statków */}
             {isPlacingShips && placedShips.length > 0 && (
               <button
@@ -1753,11 +1759,10 @@ function Body() {
                 </thead>
                 <tbody>
                   {[...shotHistory].reverse().map((shot, idx) => (
-                    <tr key={idx} className={`border-b border-slate-700 hover:bg-slate-700/30 ${
-                      shot.player === 'You' 
-                        ? 'bg-blue-900/10' 
-                        : 'bg-orange-900/10'
-                    }`}>
+                    <tr key={idx} className={`border-b border-slate-700 hover:bg-slate-700/30 ${shot.player === 'You'
+                      ? 'bg-blue-900/10'
+                      : 'bg-orange-900/10'
+                      }`}>
                       <td className="p-2 font-semibold">{shot.player}</td>
                       <td className="p-2 font-mono">{String.fromCharCode(65 + shot.col)}{shot.row + 1}</td>
                       <td className="p-2">

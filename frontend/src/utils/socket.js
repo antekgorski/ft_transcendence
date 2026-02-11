@@ -12,6 +12,7 @@ class GameSocket {
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 3000;
     this.heartbeatInterval = null;
+    this._gameEnded = false; // Flag to prevent reconnection after game ends
   }
 
   /**
@@ -23,13 +24,13 @@ class GameSocket {
    */
   connect(gameId, onConnect, onError, options = {}) {
     const { silent = false } = options;
-    
+
     // If game ID changed, close old socket and create new one
     if (this.gameId && this.gameId !== gameId && this.socket) {
       this.socket.close();
       this.socket = null;
     }
-    
+
     // If already connected or connecting to this game, handle appropriately
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       if (this.socket.readyState === WebSocket.OPEN) {
@@ -55,11 +56,8 @@ class GameSocket {
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
-        if (!silent) {
-          console.log('[SOCKET] Connected');
-        }
         this.reconnectAttempts = 0;
-        
+
         // Send join message for the requested game
         this.send({
           type: 'join',
@@ -75,7 +73,7 @@ class GameSocket {
       this.socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
+
           // Route to specific handler
           if (this.messageHandlers[data.type]) {
             this.messageHandlers[data.type](data);
@@ -93,9 +91,9 @@ class GameSocket {
 
       this.socket.onclose = () => {
         this.stopHeartbeat();
-        
-        // Attempt reconnect only if we haven't exceeded max attempts
-        if (this.reconnectAttempts < this.maxReconnectAttempts && gameId) {
+
+        // Attempt reconnect only if game is active and we haven't exceeded max attempts
+        if (this.reconnectAttempts < this.maxReconnectAttempts && gameId && !this._gameEnded) {
           this.reconnectAttempts++;
           setTimeout(() => {
             this.connect(gameId, onConnect, onError, options);
@@ -247,14 +245,43 @@ class GameSocket {
   }
 
   /**
-   * Close the connection
+   * Close the connection and mark game as ended (stops reconnection)
    */
   disconnect() {
+    this._gameEnded = true; // Prevent reconnection attempts
     this.stopHeartbeat();
     if (this.socket) {
-      this.socket.close();
-      this.socket = null;
+      try {
+        // Clear handlers to avoid callbacks during teardown
+        this.socket.onopen = null;
+        this.socket.onmessage = null;
+        this.socket.onerror = null;
+        this.socket.onclose = null;
+
+        // Always attempt to close CONNECTING or OPEN sockets to avoid leaks
+        if (
+          this.socket.readyState === WebSocket.CONNECTING ||
+          this.socket.readyState === WebSocket.OPEN
+        ) {
+          this.socket.close();
+        }
+      } finally {
+        this.socket = null;
+      }
     }
+    this.gameId = null;
+    this.pendingGameId = null;
+    this.reconnectAttempts = 0;
+  }
+
+  /**
+   * Reset socket state for a new game (clears game ended flag)
+   */
+  reset() {
+    this._gameEnded = false;
+    this.gameId = null;
+    this.pendingGameId = null;
+    this.reconnectAttempts = 0;
   }
 
   /**
