@@ -257,3 +257,51 @@ class GameStateManager:
         inactive_key = f"game:{game_id}:{player_key}:inactive"
         data = self.redis_client.smembers(inactive_key)
         return [json.loads(cell) for cell in data] if data else []
+
+    def _pvp_queue_key(self):
+        return "pvp:queue"
+
+    def _pvp_wait_key(self, user_id):
+        return f"pvp:waiting:{user_id}"
+
+    def set_pvp_waiting(self, user_id, ttl_seconds=30):
+        """Mark user as waiting for PvP matchmaking with TTL."""
+        key = self._pvp_wait_key(user_id)
+        self.redis_client.set(key, datetime.utcnow().isoformat(), ex=ttl_seconds)
+
+    def is_pvp_waiting(self, user_id):
+        """Check if user is currently waiting in PvP queue."""
+        return self.redis_client.exists(self._pvp_wait_key(user_id)) > 0
+
+    def get_pvp_wait_ttl(self, user_id):
+        """Get remaining wait TTL in seconds for user."""
+        ttl = self.redis_client.ttl(self._pvp_wait_key(user_id))
+        return max(ttl, 0) if ttl is not None else 0
+
+    def enqueue_pvp(self, user_id):
+        """Add user to PvP matchmaking queue."""
+        queue_key = self._pvp_queue_key()
+        self.redis_client.lrem(queue_key, 0, str(user_id))
+        self.redis_client.rpush(queue_key, str(user_id))
+
+    def remove_from_pvp_queue(self, user_id):
+        """Remove user from PvP matchmaking queue and clear waiting marker."""
+        queue_key = self._pvp_queue_key()
+        self.redis_client.lrem(queue_key, 0, str(user_id))
+        self.redis_client.delete(self._pvp_wait_key(user_id))
+
+    def pop_pvp_opponent(self, exclude_user_id):
+        """Pop the next valid opponent from queue, skipping stale or self entries."""
+        queue_key = self._pvp_queue_key()
+        while True:
+            opponent_id = self.redis_client.lpop(queue_key)
+            if not opponent_id:
+                return None
+            if opponent_id == str(exclude_user_id):
+                continue
+            if not self.is_pvp_waiting(opponent_id):
+                continue
+            if self.get_active_game(opponent_id):
+                self.remove_from_pvp_queue(opponent_id)
+                continue
+            return opponent_id
