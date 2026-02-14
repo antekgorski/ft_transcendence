@@ -1,4 +1,4 @@
-import React, { useContext, useEffect } from 'react';
+import React, { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
@@ -7,22 +7,6 @@ import api from '../utils/api';
 
 function Template({ children }) {
   // remove use effect if not complient
-  useEffect(() => {
-    const prevHtmlGutter = document.documentElement.style.scrollbarGutter;
-    const prevHtmlBg = document.documentElement.style.backgroundColor;
-    const prevBodyBg = document.body.style.backgroundColor;
-
-    document.documentElement.style.scrollbarGutter = 'stable';
-    document.documentElement.style.backgroundColor = '#0f172a';
-    document.body.style.backgroundColor = '#0f172a';
-
-    return () => {
-      document.documentElement.style.scrollbarGutter = prevHtmlGutter;
-      document.documentElement.style.backgroundColor = prevHtmlBg;
-      document.body.style.backgroundColor = prevBodyBg;
-    };
-  }, []);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900">
       {/* Pasek na górze */}
