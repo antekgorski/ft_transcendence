@@ -5,6 +5,7 @@ import RegisterPage from './pages/RegisterPage';
 import ProfilePage from './pages/ProfilePage';
 import GameBoard from './pages/GameBoard';
 import RouterPage from './pages/RouterPage';
+import LeaderboardPage from './pages/Leaderboard';
 import { AuthProvider, AuthContext } from './contexts/AuthContext';
 
 function AppContent() {
@@ -25,6 +26,7 @@ function AppContent() {
       <Route path="/menu" element={<RouterPage />} />
       <Route path="/game" element={<GameBoard />} />
       <Route path="/profile" element={<ProfilePage />} />
+      <Route path="/leaderboard" element={<LeaderboardPage />} />
       <Route path="*" element={<Navigate to="/menu" replace />} />
     </Routes>
   );

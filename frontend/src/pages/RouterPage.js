@@ -21,6 +21,13 @@ function Body() {
         >
           View Profile
         </button>
+          <button
+          onClick={() => navigate('/leaderboard')}
+          className="px-8 py-4 bg-purple-500 hover:bg-purple-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg"
+        >
+          View Leaderboard
+        </button>
+
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 import { Template } from './Components';
+import { ReturnToMenuButton } from './Components';
 import api from '../utils/api';
 
 const MEDIA_BASE_URL = process.env.REACT_APP_MEDIA_URL || API_BASE_URL.replace(/\/api\/?$/, '');
@@ -352,15 +353,7 @@ function Body() {
   return (
     <div className="space-y-6 w-full max-w-6xl mx-auto text-white">
       {/* Menu return button */}
-      <div className="max-w-6xl mx-auto mb-4">
-        <button
-          onClick={() => navigate('/menu')}
-          className="px-4 py-2 text-sm sm:text-base bg-slate-600 hover:bg-slate-700 rounded-md font-semibold transition-colors"
-        >
-          ← Back to Menu
-        </button>
-      </div>
-
+      <ReturnToMenuButton />
       <DisplayNameEditor />
       <div className="grid grid-cols-2 gap-8 items-start">
         <PlayerStats />
