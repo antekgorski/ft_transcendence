@@ -400,18 +400,17 @@ class GameViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Check if players are friends
-        friendship = Friendship.objects.filter(
-            Q(requester=player_1, addressee=opponent) |
-            Q(requester=opponent, addressee=player_1),
-            status__in=['accepted']
-        ).first()
-        
-        if not friendship:
-            return Response(
-                {'error': 'Cannot challenge this user. You must be friends.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        # friendship = Friendship.objects.filter(
+        #     Q(requester=player_1, addressee=opponent) |
+        #     Q(requester=opponent, addressee=player_1),
+        #     status__in=['accepted']
+        # ).first()
+        #
+        # if not friendship:
+        #     return Response(
+        #         {'error': 'Cannot challenge this user. You must be friends.'},
+        #         status=status.HTTP_403_FORBIDDEN
+        #     )
         
         # Check if opponent is in a game
         if self.redis_manager.get_active_game(opponent.id):
@@ -445,6 +444,65 @@ class GameViewSet(viewsets.ModelViewSet):
             'status': 'pending',
             'created_at': datetime.utcnow().isoformat()
         }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'])
+    def matchmake(self, request):
+        """Open PvP matchmaking queue (wait up to 30s on frontend)."""
+        user = request.user
+
+        active_game_id = self.redis_manager.get_active_game(user.id)
+        if active_game_id:
+            return Response({
+                'status': 'active',
+                'game_id': active_game_id,
+            })
+
+        opponent_id = self.redis_manager.pop_pvp_opponent(user.id)
+        if opponent_id:
+            try:
+                opponent = User.objects.get(id=opponent_id)
+            except User.DoesNotExist:
+                self.redis_manager.remove_from_pvp_queue(opponent_id)
+                opponent = None
+
+            if opponent:
+                game_id = str(uuid.uuid4())
+                self.redis_manager.create_game(
+                    game_id=game_id,
+                    player_1_id=str(user.id),
+                    player_2_id=str(opponent.id),
+                    game_type='pvp',
+                    player_1_username=user.username,
+                    player_2_username=opponent.username,
+                )
+                self.redis_manager.set_game_status(game_id, 'active')
+                self.redis_manager.set_current_turn(game_id, str(user.id))
+                self.redis_manager.set_active_game(user.id, game_id)
+                self.redis_manager.set_active_game(opponent.id, game_id)
+                self.redis_manager.remove_from_pvp_queue(opponent.id)
+
+                return Response({
+                    'status': 'matched',
+                    'game_id': game_id,
+                    'player_1': str(user.id),
+                    'player_2': str(opponent.id),
+                })
+
+        if not self.redis_manager.is_pvp_waiting(user.id):
+            self.redis_manager.set_pvp_waiting(user.id, ttl_seconds=30)
+            self.redis_manager.enqueue_pvp(user.id)
+
+        return Response({
+            'status': 'waiting',
+            'wait_ttl': self.redis_manager.get_pvp_wait_ttl(user.id),
+        })
+
+    @action(detail=False, methods=['post'], url_path='matchmake/cancel')
+    def matchmake_cancel(self, request):
+        """Cancel PvP matchmaking wait."""
+        user = request.user
+        self.redis_manager.remove_from_pvp_queue(user.id)
+        return Response({'status': 'cancelled'})
 
     def _extract_ai_ships(self, ai_board):
         """Extract AI ship positions from generated board."""
