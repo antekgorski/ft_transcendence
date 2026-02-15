@@ -12,7 +12,8 @@ RUN apk add --no-cache openssl \
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose port
-EXPOSE 80 443
+EXPOSE 443
+# EXPOSE 80
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]

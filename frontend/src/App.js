@@ -7,6 +7,8 @@ import GameBoard from './pages/GameBoard';
 import RouterPage from './pages/RouterPage';
 import LeaderboardPage from './pages/Leaderboard';
 import { AuthProvider, AuthContext } from './contexts/AuthContext';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
 
 function AppContent() {
   const { user } = useContext(AuthContext);
@@ -17,6 +19,8 @@ function AppContent() {
         <Route path="/" element={<WelcomePage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+		<Route path="/privacy-policy" element={<PrivacyPolicy />} />
+		<Route path="/terms-of-service" element={<TermsOfService />} />
       </Routes>
     );
   }
