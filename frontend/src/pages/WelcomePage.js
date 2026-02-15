@@ -151,9 +151,26 @@ function WelcomePage() {
         </div>
 
         {/* Footer */}
-        <p className="text-gray-400 text-sm">
-          ft_transcendence - 42 School Project
-        </p>
+        <div className="text-center">
+          <p className="text-gray-400 text-sm mb-2">
+            ft_transcendence - 42 School Project
+          </p>
+          <div className="flex gap-4 justify-center text-sm">
+            <a
+              href={`${API_BASE_URL}/terms`}
+              className="text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              Terms of Service
+            </a>
+            <span className="text-gray-500">|</span>
+            <a
+              href={`${API_BASE_URL}/privacy`}
+              className="text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              Privacy Policy
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );
