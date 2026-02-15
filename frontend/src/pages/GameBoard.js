@@ -6,6 +6,8 @@ import { Template } from './Components';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
 import { gameSocket } from '../utils/socket';
+import { ReturnToMenuButton } from './Components';
+
 
 // Deklarujemy stałą z rozmiarem planszy (10x10).
 const BOARD_SIZE = 10;
@@ -1479,19 +1481,20 @@ function Body() {
   // Render komponentu Body.
   return (
     // Główny kontener strony.
-    <div className="text-white">
-      {/* Przycisk powrotu do menu */}
-      <div className="max-w-6xl mx-auto mb-4">
-        <button
-          onClick={() => navigate('/menu')}
-          className="px-4 py-2 text-sm sm:text-base bg-slate-600 hover:bg-slate-700 rounded-md font-semibold transition-colors"
-        >
-          ← Back to Menu
-        </button>
+    <div className="space-y-6 w-full max-w-6xl mx-auto text-white">
+    {/* <div className="text-white"> */}
+      <div className="grid grid-cols-3 max-w-6xl mx-auto mb-6 ">
+        <div >
+          {/* Przycisk powrotu do menu */}
+          <ReturnToMenuButton />
+        </div>
+        <div>
+          {/* Tytuł strony */}
+          <h1 className="text-3xl font-bold whitespace-nowrap">Battleship — Game Board (vs AI)</h1>
+        </div>
+        <div>
+        </div>
       </div>
-
-      {/* Tytuł strony */}
-      <h1 className="text-3xl font-bold text-center mb-6 max-w-6xl mx-auto">Battleship — Game Board (vs AI)</h1>
 
       {/* Komunikat o błędzie */}
       {error && (

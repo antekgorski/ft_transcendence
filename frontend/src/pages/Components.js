@@ -6,6 +6,7 @@ import api from '../utils/api';
 
 
 function Template({ children }) {
+  // remove use effect if not complient
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900">
       {/* Pasek na górze */}
@@ -29,6 +30,19 @@ function Template({ children }) {
     </div>
   );
 }
+
+export function ReturnToMenuButton() {
+  const navigate = useNavigate();
+  return (
+          <div className="max-w-6xl mx-auto mb-4">
+        <button
+          onClick={() => navigate('/menu')}
+          className="px-4 py-2 text-sm sm:text-base bg-slate-600 hover:bg-slate-700 rounded-md font-semibold transition-colors"
+        >
+          ← Back to Menu
+        </button>
+      </div>
+  );}
 
 function LogoutButton() {
   const navigate = useNavigate();
