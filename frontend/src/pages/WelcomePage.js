@@ -156,13 +156,19 @@ function WelcomePage() {
             ft_transcendence - 42 School Project
           </p>
           <div className="flex gap-4 justify-center text-sm">
-            <Link to="/terms" className="text-emerald-400 hover:text-emerald-300 transition-colors">
+            <a
+              href={`${API_BASE_URL}/terms`}
+              className="text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
               Terms of Service
-            </Link>
+            </a>
             <span className="text-gray-500">|</span>
-            <Link to="/privacy" className="text-emerald-400 hover:text-emerald-300 transition-colors">
+            <a
+              href={`${API_BASE_URL}/privacy`}
+              className="text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
               Privacy Policy
-            </Link>
+            </a>
           </div>
         </div>
       </div>
