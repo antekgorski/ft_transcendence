@@ -156,24 +156,24 @@ function WelcomePage() {
             ft_transcendence - 42 School Project
           </p>
           <div className="flex gap-4 justify-center text-sm">
-            <a
-              href={`${API_BASE_URL}/terms`}
-              className="text-emerald-400 hover:text-emerald-300 transition-colors"
-            >
-              Terms of Service
-            </a>
-            <span className="text-gray-500">|</span>
-            <a
-              href={`${API_BASE_URL}/privacy`}
-              className="text-emerald-400 hover:text-emerald-300 transition-colors"
-            >
-              Privacy Policy
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+			<Link
+			  to="/terms-of-service"
+			  className="text-emerald-400 hover:text-emerald-300 transition-colors"
+			>
+			  Terms of Service
+			</Link>
+			<span className="text-gray-500">|</span>
+			<Link
+			  to="/privacy-policy"
+			  className="text-emerald-400 hover:text-emerald-300 transition-colors"
+			>
+			  Privacy Policy
+			</Link>
+		  </div>
+		</div>
+	  </div>
+	</div>
+	);
 }
 
 export default WelcomePage;
