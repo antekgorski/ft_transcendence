@@ -194,29 +194,32 @@ class User(AbstractBaseUser):
             
             # Save the optimized content
             # We use save=False to avoid infinite recursion of model.save()
-            image_field.save(new_filename, ContentFile(output.read()), save=False)
-
-            # CLEANUP: Delete the initial file if it exists and is different from the new one
-            # This handles cases where the unoptimized source file was saved to disk (orphaned)
-            if initial_name and initial_name != image_field.name:
-                is_default = any(str(initial_name).endswith(choice) for choice in self.AVATAR_CHOICES)
-                if is_default:
-                    pass  # Never delete defaults
-                else:
-                    # Check if file is still referenced by another avatar field
-                    still_referenced = False
-                    if self.avatar_url and self.avatar_url.name == initial_name:
-                        still_referenced = True
-                    if self.intra_avatar_url and self.intra_avatar_url.name == initial_name:
-                        still_referenced = True
-                    if self.custom_avatar_url and self.custom_avatar_url.name == initial_name:
-                        still_referenced = True
-                    if not still_referenced:
-                        try:
-                            if image_field.storage.exists(initial_name):
-                                image_field.storage.delete(initial_name)
-                        except Exception:
-                            pass
+            optimized_saved = False
+            try:
+                image_field.save(new_filename, ContentFile(output.read()), save=False)
+                optimized_saved = True
+            finally:
+                # CLEANUP: Delete the initial file if it exists and is different from the new one,
+                # but only if the optimized image was successfully saved.
+                if optimized_saved and initial_name and initial_name != image_field.name:
+                    is_default = any(str(initial_name).endswith(choice) for choice in self.AVATAR_CHOICES)
+                    if is_default:
+                        pass  # Never delete defaults
+                    else:
+                        # Check if file is still referenced by another avatar field
+                        still_referenced = False
+                        if self.avatar_url and self.avatar_url.name == initial_name:
+                            still_referenced = True
+                        if self.intra_avatar_url and self.intra_avatar_url.name == initial_name:
+                            still_referenced = True
+                        if self.custom_avatar_url and self.custom_avatar_url.name == initial_name:
+                            still_referenced = True
+                        if not still_referenced:
+                            try:
+                                if image_field.storage.exists(initial_name):
+                                    image_field.storage.delete(initial_name)
+                            except Exception:
+                                pass
                         
         except Exception as e:
             # If optimization fails (e.g. file not found or not an image), just pass
