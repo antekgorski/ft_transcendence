@@ -241,8 +241,6 @@ def get_current_user(request):
             status=status.HTTP_200_OK,
         )
     
-    
-
     try:
         user = User.objects.get(id=user_id)
         return Response(
@@ -572,31 +570,55 @@ def oauth_42_callback(request):
 
     if should_download and avatar_url:
         try:
-            response = requests.get(avatar_url)
-            if response.status_code == 200:
-                import os
+            # SAFETY: Use timeout to prevent hanging, and stream to check size
+            response = requests.get(avatar_url, timeout=5, stream=True)
+            
+            # Check size header first (fast fail)
+            content_length = response.headers.get('content-length')
+            if content_length and int(content_length) > 2 * 1024 * 1024:
+                response.close()
+                print(f"Avatar too large (header): {content_length}")
+                should_download = False
+            
+            if should_download and response.status_code == 200:
+                from io import BytesIO
+                file_content = BytesIO()
+                size = 0
+                max_size = 2 * 1024 * 1024  # 2MB
                 
-                # Delete old original avatar if it exists (though check above says it shouldn't)
-                if user.intra_avatar_url:
-                     try:
-                        if os.path.isfile(user.intra_avatar_url.path):
-                            os.remove(user.intra_avatar_url.path)
-                     except Exception as e:
-                        print(f"Error deleting old original avatar: {e}")
+                # Read chunks to enforce size limit securely
+                for chunk in response.iter_content(8192):
+                    size += len(chunk)
+                    if size > max_size:
+                        file_content = None
+                        print("Avatar too large (streamed)")
+                        break
+                    file_content.write(chunk)
+                
+                if file_content:
+                    file_content.seek(0)
+                    import os
+                    
+                    # Delete old original avatar if it exists
+                    if user.intra_avatar_url:
+                         try:
+                            # Use storage-agnostic delete
+                            user.intra_avatar_url.delete(save=False)
+                         except Exception as e:
+                            print(f"Error deleting old original avatar: {e}")
 
-                # Save to intra_avatar_url
-                import uuid
-                # Use user_id + intra + short_uuid to be recognizable but avoid caching issues
-                short_uuid = uuid.uuid4().hex[:8]
-                file_name = f"{user.id}_intra_{short_uuid}.jpg"
-                
-                user.intra_avatar_url.save(file_name, ContentFile(response.content), save=False)
-                
-                # If created or avatar_url is empty, set avatar_url too
-                if created or not user.avatar_url:
-                    user.avatar_url = user.intra_avatar_url.name
-                
-                user.save()
+                    # Save to intra_avatar_url
+                    import uuid
+                    short_uuid = uuid.uuid4().hex[:8]
+                    file_name = f"{user.id}_intra_{short_uuid}.jpg"
+                    
+                    user.intra_avatar_url.save(file_name, ContentFile(file_content.read()), save=False)
+                    
+                    # If created or avatar_url is empty, set avatar_url too
+                    if created or not user.avatar_url:
+                        user.avatar_url = user.intra_avatar_url.name
+                    
+                    user.save()
         except Exception as e:
             print(f"Failed to download avatar: {e}")
 
@@ -668,8 +690,8 @@ def upload_avatar(request):
         # Delete old custom avatar if it exists
         if user.custom_avatar_url:
             try:
-                if os.path.isfile(user.custom_avatar_url.path):
-                    os.remove(user.custom_avatar_url.path)
+                # Use storage-agnostic delete
+                user.custom_avatar_url.delete(save=False)
             except Exception as e:
                 print(f"Error deleting old custom avatar: {e}")
 

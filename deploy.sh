@@ -90,24 +90,13 @@ DEPLOY_CMD="
     export DOCKER_HUB_USER=$DOCKER_HUB_USER
 
     echo 'Stopping existing containers...'
-    docker-compose -f docker-compose.prod.yml down
-    
-    # Force remove containers by name to ensure no conflicts from previous runs/orphans
-    echo 'Force removing potential conflicting containers...'
-    docker rm -f ft_transcendence_nginx ft_transcendence_redis ft_transcendence_backend ft_transcendence_frontend || true
-
-    echo 'Pruning unused docker objects...'
-    docker system prune -f
+    docker-compose -f docker-compose.prod.yml down --remove-orphans
 
     echo 'Pulling latest images...'
     docker-compose -f docker-compose.prod.yml pull
 
     echo 'Starting containers...'
-    docker-compose -f docker-compose.prod.yml up -d
-
-    echo 'Running database migrations...'
-    docker-compose -f docker-compose.prod.yml exec -T backend python manage.py migrate
-
+    docker-compose -f docker-compose.prod.yml up -d --force-recreate
 "
 
 run_ssh "$DEPLOY_CMD"

@@ -1,9 +1,7 @@
 import React, { useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
-import API_BASE_URL from '../config';
+import { useNavigate, Link } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
 import api from '../utils/api';
-
 
 function Template({ children }) {
   // remove use effect if not complient
@@ -22,7 +20,7 @@ function Template({ children }) {
           </div>
         </div>
       </nav>
-      
+
       {/* Główna zawartość strony */}
       <div className="p-5">
         {children}
@@ -32,17 +30,17 @@ function Template({ children }) {
 }
 
 export function ReturnToMenuButton() {
-  const navigate = useNavigate();
   return (
-          <div className="max-w-6xl mx-auto mb-4">
-        <button
-          onClick={() => navigate('/menu')}
-          className="px-4 py-2 text-sm sm:text-base bg-slate-600 hover:bg-slate-700 rounded-md font-semibold transition-colors"
-        >
-          ← Back to Menu
-        </button>
-      </div>
-  );}
+    <div className="max-w-6xl mx-auto mb-4">
+      <Link
+        to="/menu"
+        className="inline-block px-4 py-2 text-sm sm:text-base bg-slate-600 hover:bg-slate-700 rounded-md font-semibold text-white transition-colors"
+      >
+        ← Back to Menu
+      </Link>
+    </div>
+  );
+}
 
 function LogoutButton() {
   const navigate = useNavigate();
@@ -73,31 +71,14 @@ function LogoutButton() {
   );
 }
 
-
-
-function Logo() {
-  return (
-    <div className="flex flex-col items-center gap-10 max-w-md w-full">
-    <div className="text-center">
-           <h1 className="text-5xl font-bold text-white tracking-wide drop-shadow-lg">
-            ⚓ BATTLESHIP
-          </h1>
-           <p className="text-lg text-emerald-400 mt-2 tracking-wide">
-            3D Tactical Multiplayer Game
-         </p>
-         </div>
-    </div>
-  );
-}
-
 function LogoHorizontal() {
   return (
     <div className="flex flex-row items-center gap-4">
       <span className="text-2xl ">⚓
-      <span className="text-white font-bold text-xl">BATTLESHIP </span> 
-      <span className="text-sm text-emerald-400 tracking-wide items-baseline">
-        3D Tactical Multiplayer Game
-      </span>
+        <span className="text-white font-bold text-xl">BATTLESHIP </span>
+        <span className="text-sm text-emerald-400 tracking-wide items-baseline">
+          3D Tactical Multiplayer Game
+        </span>
       </span>
     </div>
   );

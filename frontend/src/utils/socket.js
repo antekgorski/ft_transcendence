@@ -52,7 +52,14 @@ class GameSocket {
     // Ensure we don't accidentally pick up dev port 3000 if we are in prod but something is weird
     // But window.location.host should be correct.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.hostname}/ws/games/`;
+    let host = window.location.host; // includes port
+
+    // Special case for local dev: frontend 3000 -> backend 8000
+    if (window.location.hostname === 'localhost' && window.location.port === '3000') {
+      host = 'localhost:8000';
+    }
+
+    const wsUrl = `${protocol}//${host}/ws/games/`;
 
     try {
       this.socket = new WebSocket(wsUrl);
@@ -118,7 +125,14 @@ class GameSocket {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.hostname}/ws/games/`;
+    let host = window.location.host; // includes port
+
+    // Special case for local dev: frontend 3000 -> backend 8000
+    if (window.location.hostname === 'localhost' && window.location.port === '3000') {
+      host = 'localhost:8000';
+    }
+
+    const wsUrl = `${protocol}//${host}/ws/games/`;
 
     try {
       this.socket = new WebSocket(wsUrl);

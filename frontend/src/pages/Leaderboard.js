@@ -1,14 +1,7 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
-import API_BASE_URL from '../config';
-import { AuthContext } from '../contexts/AuthContext';
+import React, { useState, useEffect } from 'react';
 import { Template } from './Components';
 import api from '../utils/api';
 import { ReturnToMenuButton } from './Components';
-
-
-const MEDIA_BASE_URL = '';
-
 
 function LeaderboardTable() {
   const [leaderboard, setLeaderboard] = useState([]);
@@ -79,7 +72,6 @@ function LeaderboardTable() {
 
 
 function Body() {
-  const navigate = useNavigate();
   return (
     <div className="space-y-6 w-full max-w-6xl mx-auto text-white">
       <ReturnToMenuButton />

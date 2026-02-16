@@ -1,12 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
-import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
-import { Template } from './Components';
-import { ReturnToMenuButton } from './Components';
+import { Template, ReturnToMenuButton } from './Components';
 import api from '../utils/api';
-
-const MEDIA_BASE_URL = '';
 
 function DisplayNameEditor() {
   const { user, checkAuth } = useContext(AuthContext);
@@ -181,7 +176,7 @@ function Avatar() {
     if (!path) return '';
     if (path.startsWith('http')) return path;
     if (path.startsWith('/media/')) return path;
-    return `${MEDIA_BASE_URL}/media/${path}`;
+    return `/media/${path}`;
   };
 
   const availableAvatars = [
@@ -424,7 +419,6 @@ function GameHistory() {
 }
 
 function Body() {
-  const navigate = useNavigate();
   return (
     <div className="space-y-6 w-full max-w-6xl mx-auto text-white">
       {/* Menu return button */}
