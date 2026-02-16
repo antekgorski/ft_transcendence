@@ -186,11 +186,11 @@ class User(AbstractBaseUser):
             output.seek(0)
             
             # Generate a new unique filename with user ID and suffix
-            # Format: {user_id}_{suffix}_{random_hex}.jpg
+            # Format: {user_id}_{suffix}_{short_uuid}.jpg
             ext = '.jpg'
-            random_hex = uuid.uuid4().hex[:8]
+            short_uuid = uuid.uuid4().hex[:8]
             user_id_str = str(self.id) if self.id else 'new_user'
-            new_filename = f"{user_id_str}_{suffix}_{random_hex}{ext}"
+            new_filename = f"{user_id_str}_{suffix}_{short_uuid}{ext}"
             
             # Save the optimized content
             # We use save=False to avoid infinite recursion of model.save()
