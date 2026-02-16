@@ -569,59 +569,71 @@ def oauth_42_callback(request):
             should_download = True
 
     if should_download and avatar_url:
-        try:
-            # SAFETY: Use timeout to prevent hanging, and stream to check size
-            response = requests.get(avatar_url, timeout=5, stream=True)
-            
-            # Check size header first (fast fail)
-            content_length = response.headers.get('content-length')
-            if content_length and int(content_length) > 2 * 1024 * 1024:
-                response.close()
-                print(f"Avatar too large (header): {content_length}")
-                should_download = False
-            
-            if should_download and response.status_code == 200:
-                from io import BytesIO
-                file_content = BytesIO()
-                size = 0
-                max_size = 2 * 1024 * 1024  # 2MB
-                
-                # Read chunks to enforce size limit securely
-                for chunk in response.iter_content(8192):
-                    size += len(chunk)
-                    if size > max_size:
-                        file_content = None
-                        print("Avatar too large (streamed)")
-                        break
-                    file_content.write(chunk)
-                
-                if file_content:
-                    file_content.seek(0)
-                    import os
-                    
-                    # Delete old original avatar if it exists
-                    if user.intra_avatar_url:
-                         try:
-                            # Use storage-agnostic delete
-                            user.intra_avatar_url.delete(save=False)
-                         except Exception as e:
-                            print(f"Error deleting old original avatar: {e}")
+        # Validate avatar URL to prevent SSRF: require HTTPS and trusted domain
+        from urllib.parse import urlparse
+        parsed_url = urlparse(avatar_url)
+        allowed_domains = ("cdn.intra.42.fr",)
+        hostname = parsed_url.hostname or ""
+        is_allowed_domain = any(
+            hostname == domain or hostname.endswith("." + domain)
+            for domain in allowed_domains
+        )
 
-                    # Save to intra_avatar_url
-                    import uuid
-                    short_uuid = uuid.uuid4().hex[:8]
-                    file_name = f"{user.id}_intra_{short_uuid}.jpg"
+        if parsed_url.scheme != "https" or not is_allowed_domain:
+            print(f"Refusing to download avatar from untrusted URL: {avatar_url}")
+        else:
+            try:
+                # SAFETY: Use timeout to prevent hanging, and stream to check size
+                response = requests.get(avatar_url, timeout=5, stream=True)
+                
+                # Check size header first (fast fail)
+                content_length = response.headers.get('content-length')
+                if content_length and int(content_length) > 2 * 1024 * 1024:
+                    response.close()
+                    print(f"Avatar too large (header): {content_length}")
+                    should_download = False
+                
+                if should_download and response.status_code == 200:
+                    from io import BytesIO
+                    file_content = BytesIO()
+                    size = 0
+                    max_size = 2 * 1024 * 1024  # 2MB
                     
-                    user.intra_avatar_url.save(file_name, ContentFile(file_content.read()), save=False)
+                    # Read chunks to enforce size limit securely
+                    for chunk in response.iter_content(8192):
+                        size += len(chunk)
+                        if size > max_size:
+                            file_content = None
+                            print("Avatar too large (streamed)")
+                            break
+                        file_content.write(chunk)
                     
-                    # If created or avatar_url is empty, set avatar_url too
-                    if created or not user.avatar_url:
-                        user.avatar_url = user.intra_avatar_url.name
-                    
-                    user.save()
-        except Exception as e:
-            print(f"Failed to download avatar: {e}")
+                    if file_content:
+                        file_content.seek(0)
+                        import os
+                        
+                        # Delete old original avatar if it exists
+                        if user.intra_avatar_url:
+                             try:
+                                # Use storage-agnostic delete
+                                user.intra_avatar_url.delete(save=False)
+                             except Exception as e:
+                                print(f"Error deleting old original avatar: {e}")
 
+                        # Save to intra_avatar_url
+                        import uuid
+                        short_uuid = uuid.uuid4().hex[:8]
+                        file_name = f"{user.id}_intra_{short_uuid}.jpg"
+                        
+                        user.intra_avatar_url.save(file_name, ContentFile(file_content.read()), save=False)
+                        
+                        # If created or avatar_url is empty, set avatar_url too
+                        if created or not user.avatar_url:
+                            user.avatar_url = user.intra_avatar_url.name
+                        
+                        user.save()
+            except Exception as e:
+                print(f"Failed to download avatar: {e}")
     # Update last login
     user.last_login = timezone.now()
     user.save(update_fields=["last_login"])
