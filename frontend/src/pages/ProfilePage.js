@@ -264,7 +264,10 @@ function Avatar() {
           src={avatarSrc || '/media/avatars/avatar_1.jpg'} // Fallback
           alt="PlayerAvatar"
           className="w-full h-80 object-cover rounded-lg shadow-lg bg-slate-700"
-          onError={(e) => { e.target.src = '/media/avatars/avatar_1.jpg'; }}
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src = '/media/avatars/avatar_1.jpg';
+          }}
         />
         <button
           onClick={() => setShowAvatarSelector(!showAvatarSelector)}
