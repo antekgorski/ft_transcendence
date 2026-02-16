@@ -9,6 +9,3 @@ urlpatterns = [
     path('api/', include('game.urls')),
     path('api/social/', include('social.urls')),
 ]
-
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

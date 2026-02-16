@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import register, login, get_current_user, logout, set_avatar, update_profile, csrf
+from .views import register, login, get_current_user, logout, set_avatar, update_profile, csrf, upload_avatar
 # from (42 OAuth)
 from .views import oauth_42_start, oauth_42_callback
 
@@ -22,4 +22,6 @@ urlpatterns = [
     # 42 OAuth login endpoint
     path('oauth/42/start/', oauth_42_start, name='oauth_42_start'),
     path('oauth/42/callback/', oauth_42_callback, name='oauth_42_callback'),
+    # Upload custom avatar
+    path('avatar/upload/', upload_avatar, name='upload_avatar'),
 ]

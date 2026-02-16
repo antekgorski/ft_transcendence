@@ -1,6 +1,6 @@
 #from django.shortcuts import render
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -11,6 +11,8 @@ from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.core.files.base import ContentFile
+from rest_framework.parsers import MultiPartParser, FormParser
 from .models import User
 # (42 OAuth)
 from django.conf import settings
@@ -84,7 +86,7 @@ def register(request):
                     "username": user.username,
                     "email": user.email,
                     "display_name": user.display_name,
-                    "avatar_url": user.avatar_url,
+                    "avatar_url": user.avatar_url.url if user.avatar_url else None,
                     "created_at": user.created_at.isoformat()
                 }
             },
@@ -128,6 +130,20 @@ def register(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+
+
+def get_safe_avatar_url(field):
+    """Helper to return URL only if file actually exists."""
+    if field and field.name:
+        try:
+            # Use storage to check existence. 
+            # Note: This might cause a slight performance hit on slow storage, 
+            # but essential for consistency if files are manually deleted.
+            if field.storage.exists(field.name):
+                return field.url
+        except Exception:
+            pass
+    return None
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -200,7 +216,7 @@ def login(request):
                 "username": user.username,
                 "email": user.email,
                 "display_name": user.display_name,
-                "avatar_url": user.avatar_url,
+                "avatar_url": get_safe_avatar_url(user.avatar_url),
             },
         },
         status=status.HTTP_200_OK,
@@ -225,6 +241,8 @@ def get_current_user(request):
             status=status.HTTP_200_OK,
         )
     
+    
+
     try:
         user = User.objects.get(id=user_id)
         return Response(
@@ -233,7 +251,9 @@ def get_current_user(request):
                 "username": user.username,
                 "email": user.email,
                 "display_name": user.display_name,
-                "avatar_url": user.avatar_url,
+                "avatar_url": get_safe_avatar_url(user.avatar_url),
+                "custom_avatar_url": get_safe_avatar_url(user.custom_avatar_url),
+                "intra_avatar_url": get_safe_avatar_url(user.intra_avatar_url),
             },
             status=status.HTTP_200_OK,
         )
@@ -291,7 +311,7 @@ def set_avatar(request):
         
         if avatar == 'intra':
             # Only OAuth users can use their Intra photo
-            if user.oauth_provider != '42' or not user.oauth_id or not user.original_avatar_url:
+            if user.oauth_provider != '42' or not user.oauth_id or not user.intra_avatar_url:
                 return Response(
                     {
                         "error": "Only 42 OAuth users can use their Intra photo.",
@@ -301,28 +321,51 @@ def set_avatar(request):
                 )
             
             # Switch to Intra photo
-            user.avatar_url = user.original_avatar_url
-            user.save(update_fields=['avatar_url'])
+            if user.intra_avatar_url:
+                # We need to assign the file from original to avatar_url
+                # Since both are ImageFields, we can assign the file object/name
+                user.avatar_url = user.intra_avatar_url.name
+                user.save()
             
             return Response(
                 {
                     "message": "Avatar changed to Intra photo.",
                     "message_pl": "Avatar zmieniony na zdjęcie z Intra.",
-                    "avatar_url": user.avatar_url
+                    "avatar_url": user.avatar_url.url if user.avatar_url else None
+                },
+                status=status.HTTP_200_OK
+            )
+        
+        elif avatar == 'custom':
+            if not user.custom_avatar_url:
+                return Response(
+                    {"error": "No custom avatar available."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            user.avatar_url = user.custom_avatar_url.name
+            user.save()
+            return Response(
+                {
+                    "message": "Avatar changed to custom upload.",
+                    "message_pl": "Avatar zmieniony na własne zdjęcie.",
+                    "avatar_url": user.avatar_url.url if user.avatar_url else None
                 },
                 status=status.HTTP_200_OK
             )
         
         elif isinstance(avatar, int) and 1 <= avatar <= 4:
             # Set to default avatar
+            # Set to default avatar
+            # For default avatars, we are storing a relative path string in the ImageField
+            # This is technically valid as Django treats it as a path
             user.avatar_url = user.get_default_avatar_url(avatar)
-            user.save(update_fields=['avatar_url'])
+            user.save()
             
             return Response(
                 {
                     "message": "Avatar changed successfully.",
                     "message_pl": "Avatar zmieniony pomyślnie.",
-                    "avatar_url": user.avatar_url
+                    "avatar_url": user.avatar_url.url if user.avatar_url else None
                 },
                 status=status.HTTP_200_OK
             )
@@ -385,7 +428,9 @@ def update_profile(request):
                     "username": user.username,
                     "email": user.email,
                     "display_name": user.display_name,
-                    "avatar_url": user.avatar_url,
+                    "avatar_url": get_safe_avatar_url(user.avatar_url),
+                    "custom_avatar_url": get_safe_avatar_url(user.custom_avatar_url),
+                    "intra_avatar_url": get_safe_avatar_url(user.intra_avatar_url),
                 }
             },
             status=status.HTTP_200_OK
@@ -410,7 +455,10 @@ def oauth_42_start(request):
     Redirect user to 42 OAuth authorization page
     """
     client_id = settings.FORTY_TWO_CLIENT_ID
-    redirect_uri = settings.FORTY_TWO_REDIRECT_URI
+    # Dynamic redirect URI based on current host
+    # e.g. https://localhost:8080/api/auth/oauth/42/callback/
+    redirect_uri = request.build_absolute_uri('/api/auth/oauth/42/callback/')
+    
     authorize_url = (
         f"https://api.intra.42.fr/oauth/authorize"
         f"?client_id={client_id}"
@@ -436,12 +484,15 @@ def oauth_42_callback(request):
 
     # Exchange code for access token
     token_url = "https://api.intra.42.fr/oauth/token"
+    # Dynamic redirect URI must match the one used in authorization request
+    redirect_uri = request.build_absolute_uri('/api/auth/oauth/42/callback/')
+    
     token_data = {
         "grant_type": "authorization_code",
         "client_id": settings.FORTY_TWO_CLIENT_ID,
         "client_secret": settings.FORTY_TWO_CLIENT_SECRET,
         "code": code,
-        "redirect_uri": settings.FORTY_TWO_REDIRECT_URI,
+        "redirect_uri": redirect_uri,
     }
 
     try:
@@ -478,6 +529,7 @@ def oauth_42_callback(request):
     avatar_url = user_data.get("image", {}).get("link", "")
 
     # Find or create user
+    created = False
     try:
         user = User.objects.get(oauth_provider="42", oauth_id=oauth_id)
     except User.DoesNotExist:
@@ -496,12 +548,57 @@ def oauth_42_callback(request):
             username=username,
             email=email,
             display_name=f"{first_name} {last_name}".strip() or username,
-            avatar_url=avatar_url,  # Store the 42 Intra photo URL directly
-            original_avatar_url=avatar_url,  # Keep original Intra URL
             oauth_provider="42",
             oauth_id=oauth_id,
             is_active=True,
         )
+        created = True
+
+    # Handle Avatar Download (for new users or if missing)
+    # We download if:
+    # 1. User is new
+    # 2. User has no original_avatar_url (cleaned by migration)
+    # Handle Avatar Download (for new users, missing avatar, or missing file)
+    should_download = False
+    if created or not user.intra_avatar_url:
+        should_download = True
+    else:
+        # Check if file physically exists
+        try:
+            if not user.intra_avatar_url.storage.exists(user.intra_avatar_url.name):
+                should_download = True
+        except Exception:
+            should_download = True
+
+    if should_download and avatar_url:
+        try:
+            response = requests.get(avatar_url)
+            if response.status_code == 200:
+                import os
+                
+                # Delete old original avatar if it exists (though check above says it shouldn't)
+                if user.intra_avatar_url:
+                     try:
+                        if os.path.isfile(user.intra_avatar_url.path):
+                            os.remove(user.intra_avatar_url.path)
+                     except Exception as e:
+                        print(f"Error deleting old original avatar: {e}")
+
+                # Save to intra_avatar_url
+                import uuid
+                # Use user_id + intra + short_uuid to be recognizable but avoid caching issues
+                short_uuid = uuid.uuid4().hex[:8]
+                file_name = f"{user.id}_intra_{short_uuid}.jpg"
+                
+                user.intra_avatar_url.save(file_name, ContentFile(response.content), save=False)
+                
+                # If created or avatar_url is empty, set avatar_url too
+                if created or not user.avatar_url:
+                    user.avatar_url = user.intra_avatar_url.name
+                
+                user.save()
+        except Exception as e:
+            print(f"Failed to download avatar: {e}")
 
     # Update last login
     user.last_login = timezone.now()
@@ -528,3 +625,73 @@ def oauth_42_callback(request):
     </html>
     """
     return HttpResponse(html_response, content_type='text/html')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def upload_avatar(request):
+    """
+    Upload a custom avatar.
+    """
+    user = request.user
+    file = request.FILES.get('avatar')
+    
+    if not file:
+        return Response(
+            {"error": "No file provided."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    # Validate file size (e.g. 2MB)
+    if file.size > 2 * 1024 * 1024:
+        return Response(
+            {"error": "File too large. Max size is 2MB."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    # Validate file type
+    if not file.content_type.startswith('image/'):
+        return Response(
+            {"error": "Invalid file type. Please upload an image."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        import uuid
+        import os
+        ext = file.name.split('.')[-1]
+        # Use user_id + custom + short_uuid to be recognizable but avoid caching issues
+        short_uuid = uuid.uuid4().hex[:8]
+        filename = f"{user.id}_custom_{short_uuid}.{ext}"
+        
+        # Delete old custom avatar if it exists
+        if user.custom_avatar_url:
+            try:
+                if os.path.isfile(user.custom_avatar_url.path):
+                    os.remove(user.custom_avatar_url.path)
+            except Exception as e:
+                print(f"Error deleting old custom avatar: {e}")
+
+        # Save to custom_avatar_url (persistence)
+        # model's save method will handle optimization
+        user.custom_avatar_url.save(filename, file)
+        
+        # Point avatar_url to the same file (by reference)
+        # We assign the FieldFile object to the other field
+        user.avatar_url = user.custom_avatar_url.name
+        
+        user.save()
+        
+        return Response(
+            {
+                "message": "Avatar uploaded successfully.",
+                "avatar_url": user.avatar_url.url if user.avatar_url else None
+            },
+            status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"Failed to upload avatar: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

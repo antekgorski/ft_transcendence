@@ -49,8 +49,10 @@ class GameSocket {
     this.gameId = gameId;
     this.pendingGameId = null;
     // Use relative WebSocket URL that works through nginx proxy
+    // Ensure we don't accidentally pick up dev port 3000 if we are in prod but something is weird
+    // But window.location.host should be correct.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/games/`;
+    const wsUrl = `${protocol}//${window.location.hostname}/ws/games/`;
 
     try {
       this.socket = new WebSocket(wsUrl);
@@ -116,7 +118,7 @@ class GameSocket {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/games/`;
+    const wsUrl = `${protocol}//${window.location.hostname}/ws/games/`;
 
     try {
       this.socket = new WebSocket(wsUrl);
