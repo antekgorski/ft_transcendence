@@ -266,6 +266,42 @@ def get_current_user(request):
         )
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def search_users(request):
+    """
+    Search users by username or display name.
+    Query param: q (min 2 chars)
+    """
+    query = request.GET.get('q', '').strip()
+
+    if len(query) < 2:
+        return Response(
+            {"error": "Search query must be at least 2 characters"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    users = (
+        User.objects.filter(
+            Q(username__icontains=query) | Q(display_name__icontains=query)
+        )
+        .exclude(id=request.user.id)
+        .order_by('username')[:20]
+    )
+
+    results = [
+        {
+            "id": str(user.id),
+            "username": user.username,
+            "display_name": user.display_name,
+            "avatar_url": get_safe_avatar_url(user.avatar_url),
+        }
+        for user in users
+    ]
+
+    return Response({"results": results}, status=status.HTTP_200_OK)
+
+
 @ensure_csrf_cookie
 @api_view(['GET'])
 @permission_classes([AllowAny])

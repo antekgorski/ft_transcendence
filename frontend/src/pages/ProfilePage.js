@@ -325,6 +325,288 @@ function Avatar() {
   );
 }
 
+function FriendsManager() {
+  const { user } = useContext(AuthContext);
+  const [friends, setFriends] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [friendsLoading, setFriendsLoading] = useState(true);
+  const [friendsError, setFriendsError] = useState('');
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [requestMessage, setRequestMessage] = useState('');
+
+  const getAvatarUrl = (path) => {
+    if (!path) return '/media/avatars/avatar_1.jpg';
+    if (path.startsWith('http')) return path;
+    if (path.startsWith('/media/')) return path;
+    return `/media/${path}`;
+  };
+
+  const fetchFriendsData = async () => {
+    setFriendsLoading(true);
+    setFriendsError('');
+    try {
+      const [acceptedResponse, pendingResponse] = await Promise.all([
+        api.get('/social/friendships/accepted/'),
+        api.get('/social/friendships/pending/'),
+      ]);
+      setFriends(acceptedResponse.data || []);
+      setPendingRequests(pendingResponse.data || []);
+    } catch (err) {
+      console.error('Failed to load friends data:', err);
+      setFriendsError('Failed to load friends data.');
+    } finally {
+      setFriendsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchFriendsData();
+    }
+  }, [user?.id]);
+
+  const handleSearch = async (event) => {
+    event.preventDefault();
+    setSearchError('');
+    setRequestMessage('');
+    setSearchResults([]);
+
+    if (searchQuery.trim().length < 2) {
+      setSearchError('Enter at least 2 characters.');
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const response = await api.get('/auth/users/search/', {
+        params: { q: searchQuery.trim() },
+      });
+      setSearchResults(response.data?.results || []);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Search failed.';
+      setSearchError(errorMsg);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSendRequest = async (userId) => {
+    setRequestMessage('');
+    setSearchError('');
+    try {
+      await api.post('/social/friendships/', { user_id: userId });
+      setRequestMessage('Friend request sent.');
+      fetchFriendsData();
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to send request.';
+      setSearchError(errorMsg);
+    }
+  };
+
+  const handleAcceptRequest = async (friendshipId) => {
+    setFriendsError('');
+    try {
+      await api.post(`/social/friendships/${friendshipId}/accept/`);
+      fetchFriendsData();
+    } catch (err) {
+      console.error('Failed to accept request:', err);
+      setFriendsError('Failed to accept request.');
+    }
+  };
+
+  const handleRejectRequest = async (friendshipId) => {
+    setFriendsError('');
+    try {
+      await api.post(`/social/friendships/${friendshipId}/reject/`);
+      fetchFriendsData();
+    } catch (err) {
+      console.error('Failed to reject request:', err);
+      setFriendsError('Failed to reject request.');
+    }
+  };
+
+  const handleRemoveFriend = async (friendshipId) => {
+    setFriendsError('');
+    try {
+      await api.delete(`/social/friendships/${friendshipId}/`);
+      fetchFriendsData();
+    } catch (err) {
+      console.error('Failed to remove friend:', err);
+      setFriendsError('Failed to remove friend.');
+    }
+  };
+
+  return (
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-slate-700">
+      <h2 className="text-2xl font-bold text-white mb-4">Friends</h2>
+
+      {friendsError && (
+        <p className="text-red-400 mb-4">{friendsError}</p>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h3 className="text-lg font-semibold text-emerald-400 mb-3">Search by Login</h3>
+          <form onSubmit={handleSearch} className="space-y-3">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Type a username or display name"
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400"
+            />
+            <button
+              type="submit"
+              disabled={searchLoading}
+              className="w-full px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-500 rounded-md text-white font-semibold transition-colors"
+            >
+              {searchLoading ? 'Searching...' : 'Search'}
+            </button>
+          </form>
+
+          {searchError && (
+            <p className="text-red-400 text-sm mt-2">{searchError}</p>
+          )}
+          {requestMessage && (
+            <p className="text-emerald-400 text-sm mt-2">{requestMessage}</p>
+          )}
+
+          {searchResults.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {searchResults.map((result) => (
+                <div
+                  key={result.id}
+                  className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={getAvatarUrl(result.avatar_url)}
+                      alt={result.username}
+                      className="w-10 h-10 rounded-full object-cover"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = '/media/avatars/avatar_1.jpg';
+                      }}
+                    />
+                    <div>
+                      <p className="text-white font-semibold">{result.display_name || result.username}</p>
+                      <p className="text-gray-400 text-sm">@{result.username}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleSendRequest(result.id)}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-semibold"
+                  >
+                    Add
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h3 className="text-lg font-semibold text-emerald-400 mb-3">Pending Requests</h3>
+          {friendsLoading ? (
+            <p className="text-gray-400">Loading...</p>
+          ) : pendingRequests.length === 0 ? (
+            <p className="text-gray-400">No pending requests.</p>
+          ) : (
+            <div className="space-y-2">
+              {pendingRequests.map((request) => {
+                const requester = request.requester_data;
+                return (
+                  <div
+                    key={request.id}
+                    className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={getAvatarUrl(requester?.avatar_url)}
+                        alt={requester?.username}
+                        className="w-10 h-10 rounded-full object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/media/avatars/avatar_1.jpg';
+                        }}
+                      />
+                      <div>
+                        <p className="text-white font-semibold">{requester?.display_name || requester?.username}</p>
+                        <p className="text-gray-400 text-sm">@{requester?.username}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAcceptRequest(request.id)}
+                        className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-sm font-semibold"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => handleRejectRequest(request.id)}
+                        className="px-3 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-md text-sm font-semibold"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <h3 className="text-lg font-semibold text-emerald-400 mb-3 mt-6">Friends List</h3>
+          {friendsLoading ? (
+            <p className="text-gray-400">Loading...</p>
+          ) : friends.length === 0 ? (
+            <p className="text-gray-400">No friends yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {friends.map((friendship) => {
+                const friend = friendship.requester_data?.id === user?.id
+                  ? friendship.addressee_data
+                  : friendship.requester_data;
+                return (
+                  <div
+                    key={friendship.id}
+                    className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={getAvatarUrl(friend?.avatar_url)}
+                        alt={friend?.username}
+                        className="w-10 h-10 rounded-full object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/media/avatars/avatar_1.jpg';
+                        }}
+                      />
+                      <div>
+                        <p className="text-white font-semibold">{friend?.display_name || friend?.username}</p>
+                        <p className="text-gray-400 text-sm">@{friend?.username}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveFriend(friendship.id)}
+                      className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-semibold"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GameHistory() {
   const { user } = useContext(AuthContext);
   const [games, setGames] = useState([]);
@@ -431,6 +713,7 @@ function Body() {
         <PlayerStats />
         <Avatar />
       </div>
+      <FriendsManager />
       <GameHistory />
     </div>
   );
