@@ -21,7 +21,7 @@ function PrivacyPolicy() {
           <h2 className="text-3xl font-bold text-center text-slate-800 mb-6">
             Privacy Policy
           </h2>
-          
+
           <p className="text-sm text-gray-600 mb-8 text-center">
             Last updated: February 14, 2026
           </p>
@@ -128,10 +128,7 @@ function PrivacyPolicy() {
           <div className="mt-8 flex justify-center">
             <Link
               to="/"
-              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 
-                         text-white font-bold uppercase tracking-wider rounded-md
-                         hover:from-emerald-600 hover:to-emerald-700 hover:shadow-lg
-                         transition-all inline-block"
+              className="inline-block px-4 py-2 text-sm sm:text-base bg-slate-600 hover:bg-slate-700 rounded-md font-semibold text-white transition-colors"
             >
               Back to Home
             </Link>

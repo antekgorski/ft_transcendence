@@ -1,3 +1,5 @@
+import API_BASE_URL from '../config';
+
 /**
  * CSRF Token Utility
  * 
@@ -26,13 +28,14 @@ export function getCsrfToken() {
   return cookieValue;
 }
 
+
+
 /**
  * Fetch CSRF token from backend endpoint
  * This should be called once on app initialization to ensure CSRF cookie is set
  * @returns {Promise<void>}
  */
 export async function fetchCsrfToken() {
-  const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
   try {
     const response = await fetch(`${API_BASE_URL}/auth/csrf/`, {

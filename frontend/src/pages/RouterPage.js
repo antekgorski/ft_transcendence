@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Template } from './Components';
 import api from '../utils/api';
 
@@ -91,13 +91,12 @@ function Body() {
     <div className="flex flex-col items-center justify-center gap-8 min-h-[60vh]">
       <h2 className="text-4xl font-bold text-white">Choose Your Destination</h2>
       <div className="flex gap-6">
-        <button
-          onClick={() => navigate('/game')}
-          disabled={isSearching}
-          className="px-8 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg"
+        <Link
+          to="/game"
+          className={`px-8 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg flex items-center justify-center ${isSearching ? 'opacity-50 pointer-events-none' : ''}`}
         >
           Play Game
-        </button>
+        </Link>
         <button
           onClick={handlePvpClick}
           disabled={isSearching}
@@ -105,19 +104,18 @@ function Body() {
         >
           Graj PvP
         </button>
-        <button
-          onClick={() => navigate('/profile')}
-          disabled={isSearching}
-          className="px-8 py-4 bg-blue-500 hover:bg-blue-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg"
+        <Link
+          to="/profile"
+          className={`px-8 py-4 bg-blue-500 hover:bg-blue-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg flex items-center justify-center ${isSearching ? 'opacity-50 pointer-events-none' : ''}`}
         >
           View Profile
-        </button>
-          <button
-          onClick={() => navigate('/leaderboard')}
-          className="px-8 py-4 bg-purple-500 hover:bg-purple-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg"
+        </Link>
+        <Link
+          to="/leaderboard"
+          className="px-8 py-4 bg-purple-500 hover:bg-purple-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg flex items-center justify-center"
         >
           View Leaderboard
-        </button>
+        </Link>
 
       </div>
       {isSearching && (

@@ -3,6 +3,11 @@ import random
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.hashers import make_password, check_password
+from PIL import Image
+from io import BytesIO
+from django.core.files.base import ContentFile
+import os
+
 
 
 class UserManager(BaseUserManager):
@@ -47,8 +52,10 @@ class User(AbstractBaseUser):
     email = models.EmailField(unique=True)
     password = models.CharField(max_length=255, db_column='password_hash')
     display_name = models.CharField(max_length=150, blank=True, null=True)
-    avatar_url = models.URLField(max_length=500, blank=True, null=True)
-    original_avatar_url = models.URLField(max_length=500, blank=True, null=True)  # Stores Intra URL for OAuth users
+    avatar_url = models.ImageField(upload_to='avatars/', max_length=500, blank=True, null=True)
+    custom_avatar_url = models.ImageField(upload_to='avatars/', max_length=500, blank=True, null=True)  # Stores local path to custom uploaded avatar
+    intra_avatar_url = models.ImageField(upload_to='avatars/', max_length=500, blank=True, null=True)  # Stores local path to downloaded Intra photo
+
     language = models.CharField(max_length=10, default='en')
     oauth_provider = models.CharField(max_length=50, blank=True, null=True)
     oauth_id = models.CharField(max_length=255, blank=True, null=True)
@@ -66,6 +73,158 @@ class User(AbstractBaseUser):
 
     class Meta:
         db_table = 'users'
+
+    def save(self, *args, **kwargs):
+        """Override save to optimize images and clean up old files"""
+        # Check if we should skip optimization (e.g. only updating last_login)
+        update_fields = kwargs.get('update_fields')
+        
+        old_avatar = None
+        old_intra = None
+        old_custom = None
+
+        # Check for existing instance to compare fields
+        if self.pk:
+            try:
+                old_instance = User.objects.get(pk=self.pk)
+                old_avatar = old_instance.avatar_url
+                old_intra = old_instance.intra_avatar_url
+                old_custom = old_instance.custom_avatar_url
+                
+                # Helper to delete old file if changed
+                self._delete_old_file(old_instance.avatar_url, self.avatar_url)
+                self._delete_old_file(old_instance.intra_avatar_url, self.intra_avatar_url)
+                self._delete_old_file(old_instance.custom_avatar_url, self.custom_avatar_url)
+            except User.DoesNotExist:
+                pass
+
+        should_optimize = True
+        if update_fields:
+            # If update_fields is present, only optimize if we are updating avatar fields
+            should_optimize = any(field in update_fields for field in ['avatar_url', 'intra_avatar_url', 'custom_avatar_url'])
+            
+        if should_optimize:
+            # Optimize avatar_url
+            if self.avatar_url and (not update_fields or 'avatar_url' in update_fields):
+                # Only optimize if it's a new upload (different from old) or if it's a new user
+                if not self.pk or self.avatar_url != old_avatar:
+                    # Skip if avatar_url is just a reference to intra or custom (already optimized)
+                    is_reference = False
+                    if self.intra_avatar_url and self.avatar_url.name == self.intra_avatar_url.name:
+                        is_reference = True
+                    if self.custom_avatar_url and self.avatar_url.name == self.custom_avatar_url.name:
+                        is_reference = True
+                    if not is_reference:
+                        self._optimize_image(self.avatar_url, 'avatar')
+            
+            # Optimize intra_avatar_url
+            if self.intra_avatar_url and (not update_fields or 'intra_avatar_url' in update_fields):
+                if not self.pk or self.intra_avatar_url != old_intra:
+                    self._optimize_image(self.intra_avatar_url, 'intra')
+                
+            # Optimize custom_avatar_url
+            if self.custom_avatar_url and (not update_fields or 'custom_avatar_url' in update_fields):
+                if not self.pk or self.custom_avatar_url != old_custom:
+                    self._optimize_image(self.custom_avatar_url, 'custom')
+            
+        super().save(*args, **kwargs)
+
+    def _delete_old_file(self, old_file, new_file):
+        """Delete old file if it changed and is not referenced by other fields"""
+        if old_file and old_file != new_file:
+            old_name = old_file.name
+            if not old_name:
+                return
+
+            # Check if it's one of the default avatars
+            is_default = any(str(old_name).endswith(choice) for choice in self.AVATAR_CHOICES)
+            if is_default:
+                return
+
+            # Check if file is still referenced by other fields on the NEW instance
+            # We compare names to be safe.
+            
+            # Check active avatar
+            if self.avatar_url and self.avatar_url.name == old_name:
+                return
+            # Check intra avatar
+            if self.intra_avatar_url and self.intra_avatar_url.name == old_name:
+                return
+            # Check custom avatar
+            if self.custom_avatar_url and self.custom_avatar_url.name == old_name:
+                return
+
+            try:
+                # Use storage backend to delete
+                if old_file.storage.exists(old_name):
+                    old_file.storage.delete(old_name)
+            except Exception:
+                pass
+
+    def _optimize_image(self, image_field, suffix='avatar'):
+        """Resize and compress image field"""
+        try:
+            # Capture initial name to clean up later if it's an orphan/temp file
+            initial_name = image_field.name
+
+            # Check if image has already been processed (optional: check existence)
+            # Opening the image with Pillow
+            img = Image.open(image_field)
+            
+            # Convert to RGB if needed (e.g. for PNGs with alpha channel)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Resize if larger than 500x500
+            if img.height > 500 or img.width > 500:
+                output_size = (500, 500)
+                img.thumbnail(output_size)
+            
+            # Save back to memory as JPEG
+            output = BytesIO()
+            img.save(output, format='JPEG', quality=85)
+            output.seek(0)
+            
+            # Generate a new unique filename with user ID and suffix
+            # Format: {user_id}_{suffix}_{short_uuid}.jpg
+            ext = '.jpg'
+            short_uuid = uuid.uuid4().hex[:8]
+            user_id_str = str(self.id) if self.id else 'new_user'
+            new_filename = f"{user_id_str}_{suffix}_{short_uuid}{ext}"
+            
+            # Save the optimized content
+            # We use save=False to avoid infinite recursion of model.save()
+            optimized_saved = False
+            try:
+                image_field.save(new_filename, ContentFile(output.read()), save=False)
+                optimized_saved = True
+            finally:
+                # CLEANUP: Delete the initial file if it exists and is different from the new one,
+                # but only if the optimized image was successfully saved.
+                if optimized_saved and initial_name and initial_name != image_field.name:
+                    is_default = any(str(initial_name).endswith(choice) for choice in self.AVATAR_CHOICES)
+                    if is_default:
+                        pass  # Never delete defaults
+                    else:
+                        # Check if file is still referenced by another avatar field
+                        still_referenced = False
+                        if self.avatar_url and self.avatar_url.name == initial_name:
+                            still_referenced = True
+                        if self.intra_avatar_url and self.intra_avatar_url.name == initial_name:
+                            still_referenced = True
+                        if self.custom_avatar_url and self.custom_avatar_url.name == initial_name:
+                            still_referenced = True
+                        if not still_referenced:
+                            try:
+                                if image_field.storage.exists(initial_name):
+                                    image_field.storage.delete(initial_name)
+                            except Exception:
+                                pass
+                        
+        except Exception as e:
+            # If optimization fails (e.g. file not found or not an image), just pass
+            # print(f"Image optimization failed: {e}")
+            pass
 
     def set_password(self, raw_password):
         """Hash and set the password"""

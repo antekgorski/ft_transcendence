@@ -220,9 +220,9 @@ class GameHistorySerializer(serializers.ModelSerializer):
         if request:
             current_user = request.user
             if obj.player_1_id == current_user.id:
-                return obj.player_2.avatar_url if obj.player_2 else None
+                return obj.player_2.avatar_url.url if obj.player_2 and obj.player_2.avatar_url else None
             else:
-                return obj.player_1.avatar_url if obj.player_1 else None
+                return obj.player_1.avatar_url.url if obj.player_1 and obj.player_1.avatar_url else None
         return None
     
     def get_result(self, obj):

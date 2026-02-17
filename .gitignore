@@ -15,3 +15,5 @@ yarn-error.log*
 copilot-instructions.md
 
 .coverage
+.deploy_config
+prod.env

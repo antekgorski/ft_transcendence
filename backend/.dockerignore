@@ -23,7 +23,13 @@ coverage.xml
 *.db
 *.sqlite3
 db.sqlite3
-media/
+media/*
+!media/avatars/
+media/avatars/*
+!media/avatars/avatar_1.jpg
+!media/avatars/avatar_2.jpg
+!media/avatars/avatar_3.jpg
+!media/avatars/avatar_4.jpg
 staticfiles/
 .env
 .env.local
