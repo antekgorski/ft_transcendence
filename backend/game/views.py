@@ -1064,6 +1064,8 @@ class GameViewSet(viewsets.ModelViewSet):
         player_2_ready = player_2_ships is not None or game_type == 'ai'
         
         return Response({
+            'player_1_id': player_1_id,
+            'player_2_id': player_2_id,
             'player_1_ready': player_1_ready,
             'player_2_ready': player_2_ready,
             'both_ready': player_1_ready and player_2_ready,

@@ -291,8 +291,13 @@ function Body() {
                 { withCredentials: true }
               );
 
-              if (shipsStatusResponse.data.player_1_ready && shipsStatusResponse.data.player_1_ships) {
-                const shipData = shipsStatusResponse.data.player_1_ships;
+              // Determine if current user is player_1 or player_2
+              const isPlayer1 = user.id.toString() === shipsStatusResponse.data.player_1_id;
+              const myShips = isPlayer1 ? shipsStatusResponse.data.player_1_ships : shipsStatusResponse.data.player_2_ships;
+              const myReady = isPlayer1 ? shipsStatusResponse.data.player_1_ready : shipsStatusResponse.data.player_2_ready;
+
+              if (myReady && myShips) {
+                const shipData = myShips;
                 const { board, ships } = loadShipsToBoard(shipData.positions);
 
                 setPlacedShips(ships);
@@ -307,7 +312,12 @@ function Body() {
                     { withCredentials: true }
                   );
                   const { player_1_shots, player_2_shots, player_1_inactive, player_2_inactive, current_turn } = shotsResponse.data;
-                  const restored = restoreGameStateFromShots(board, player_1_shots, player_2_shots, player_1_inactive, player_2_inactive);
+                  // Pass shots in correct perspective: my shots vs opponent shots
+                  const myShots = isPlayer1 ? player_1_shots : player_2_shots;
+                  const opponentShots = isPlayer1 ? player_2_shots : player_1_shots;
+                  const myInactive = isPlayer1 ? player_1_inactive : player_2_inactive;
+                  const opponentInactive = isPlayer1 ? player_2_inactive : player_1_inactive;
+                  const restored = restoreGameStateFromShots(board, myShots, opponentShots, myInactive, opponentInactive);
                   setPlayerBoard(restored.playerBoard);
                   setEnemyBoard(restored.enemyBoard);
                   setShotHistory(restored.shotHistory);
@@ -393,8 +403,13 @@ function Body() {
                   { withCredentials: true }
                 );
 
-                if (shipsStatusResponse.data.player_1_ready && shipsStatusResponse.data.player_1_ships) {
-                  const shipData = shipsStatusResponse.data.player_1_ships;
+                // Determine if current user is player_1 or player_2
+                const isPlayer1 = user.id.toString() === shipsStatusResponse.data.player_1_id;
+                const myShips = isPlayer1 ? shipsStatusResponse.data.player_1_ships : shipsStatusResponse.data.player_2_ships;
+                const myReady = isPlayer1 ? shipsStatusResponse.data.player_1_ready : shipsStatusResponse.data.player_2_ready;
+
+                if (myReady && myShips) {
+                  const shipData = myShips;
                   const { board, ships } = loadShipsToBoard(shipData.positions);
 
                   setPlacedShips(ships);
@@ -409,7 +424,12 @@ function Body() {
                       { withCredentials: true }
                     );
                     const { player_1_shots, player_2_shots, player_1_inactive, player_2_inactive, current_turn } = shotsResponse.data;
-                    const restored = restoreGameStateFromShots(board, player_1_shots, player_2_shots, player_1_inactive, player_2_inactive);
+                    // Pass shots in correct perspective: my shots vs opponent shots
+                    const myShots = isPlayer1 ? player_1_shots : player_2_shots;
+                    const opponentShots = isPlayer1 ? player_2_shots : player_1_shots;
+                    const myInactive = isPlayer1 ? player_1_inactive : player_2_inactive;
+                    const opponentInactive = isPlayer1 ? player_2_inactive : player_1_inactive;
+                    const restored = restoreGameStateFromShots(board, myShots, opponentShots, myInactive, opponentInactive);
                     setPlayerBoard(restored.playerBoard);
                     setEnemyBoard(restored.enemyBoard);
                     setShotHistory(restored.shotHistory);
