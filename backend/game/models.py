@@ -10,6 +10,8 @@ class Game(models.Model):
     ]
 
     STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('active', 'Active'),
         ('completed', 'Completed'),
         ('forfeited', 'Forfeited'),
     ]
@@ -18,7 +20,7 @@ class Game(models.Model):
     player_1 = models.ForeignKey('authentication.User', on_delete=models.CASCADE, related_name='games_as_player1')
     player_2 = models.ForeignKey('authentication.User', on_delete=models.CASCADE, related_name='games_as_player2', null=True, blank=True)
     game_type = models.CharField(max_length=10, choices=GAME_TYPES, default='pvp')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='completed')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     winner = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, related_name='games_won', null=True, blank=True)
     duration_seconds = models.IntegerField(default=0)
     player_1_shots = models.IntegerField(default=0)

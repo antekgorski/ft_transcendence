@@ -3,6 +3,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Security
@@ -136,13 +143,13 @@ SESSION_CACHE_ALIAS = 'default'
 SESSION_COOKIE_AGE = 86400  # 24 hours
 SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookie
 SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
-SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', False)
 SESSION_COOKIE_NAME = 'sessionid'  # Explicit name
 
 # CSRF Configuration
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False  # Must be False so JavaScript can read it
-CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', False)
 CSRF_COOKIE_NAME = 'csrftoken'  # Explicit name
 CSRF_USE_SESSIONS = False  # Use cookie-based CSRF tokens
 CSRF_TRUSTED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if os.environ.get('CORS_ALLOWED_ORIGINS') else [
