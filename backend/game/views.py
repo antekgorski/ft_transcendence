@@ -1092,6 +1092,7 @@ class GameViewSet(viewsets.ModelViewSet):
         player_1_inactive = self.redis_manager.get_inactive_cells(id, 'player_1') or []
         player_2_inactive = self.redis_manager.get_inactive_cells(id, 'player_2') or []
         current_turn = self.redis_manager.get_current_turn(id)
+        chat_messages = self.redis_manager.get_chat_messages(id) or []
         
         # Sort shots by timestamp (Redis returns in reverse order)
         def sort_by_timestamp(shots):
@@ -1102,7 +1103,8 @@ class GameViewSet(viewsets.ModelViewSet):
             'player_2_shots': sort_by_timestamp(player_2_shots),
             'player_1_inactive': player_1_inactive,
             'player_2_inactive': player_2_inactive,
-            'current_turn': current_turn
+            'current_turn': current_turn,
+            'chat_messages': chat_messages
         })
 
     @action(detail=False, methods=['get'])

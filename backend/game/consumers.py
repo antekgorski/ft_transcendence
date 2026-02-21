@@ -10,6 +10,32 @@ from channels.db import database_sync_to_async
 from .redis_manager import GameStateManager
 from .ai_opponent import AIOpponent
 
+AI_SINK_TAUNTS = [
+    "Your fleet is shrinking! 🔥",
+    "Another one bites the dust! 💀",
+    "That ship won't be missed... by me! 😎",
+    "Bullseye! Down she goes! 🎯",
+    "Is that all you've got, Captain? 🏴‍☠️",
+    "Splash! One less ship to worry about! 💦",
+    "I can smell victory already! 🏆",
+    "Your admiral would be disappointed! 😏",
+    "The ocean claims another vessel! 🌊",
+    "Direct hit! Your fleet is crumbling! 💥",
+]
+
+AI_PLAYER_SINK_TAUNTS = [
+    "Lucky shot! 🍀",
+    "You sunk my ship? Inconceivable! 😱",
+    "Beginner's luck... 🙄",
+    "I'll make you pay for that! 😡",
+    "Just a scratch! 🛥️",
+    "My calculations were off... slightly. 📉",
+    "I let you have that one. 😉",
+    "Enjoy it while it lasts! ⏳",
+    "Your coordinates were completely random! 🎲",
+    "That was my worst ship anyway. 🚢"
+]
+
 
 class GameConsumer(AsyncWebsocketConsumer):
     """
@@ -101,6 +127,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                 # Player reconnected, no forfeit needed
                 return
             
+            # If the disconnection record is newer than ~60s, a newer timer will handle it
+            delta = (datetime.utcnow() - disconnected_at).total_seconds()
+            if delta < 55:
+                # This record was set by a MORE RECENT disconnect. Let that newer timer handle it.
+                return
+            
             # Check if game still exists and hasn't ended
             game_meta = self.redis_manager.get_game_meta(game_id)
             if not game_meta:
@@ -153,6 +185,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self._handle_game_move(data)
             elif message_type == 'game_forfeit':
                 await self._handle_game_forfeit(data)
+            elif message_type == 'chat_message':
+                await self._handle_chat_message(data)
             else:
                 await self.send_error('Unknown message type')
         
@@ -346,6 +380,22 @@ class GameConsumer(AsyncWebsocketConsumer):
             move_data
         )
 
+        # AI taunt when player sinks its ship
+        if newly_sunk and opponent_key == 'player_2' and game_meta['game_type'] == 'ai':
+            taunt = random.choice(AI_PLAYER_SINK_TAUNTS)
+            taunt_timestamp = datetime.utcnow().isoformat()
+            self.redis_manager.add_chat_message(self.game_id, game_meta.get('player_2_id', 'ai'), 'AI', taunt, taunt_timestamp)
+            await self.channel_layer.group_send(
+                f"game_{self.game_id}",
+                {
+                    'type': 'chat_message',
+                    'sender_id': game_meta.get('player_2_id', 'ai'),
+                    'sender_username': 'AI',
+                    'message': taunt,
+                    'timestamp': taunt_timestamp,
+                }
+            )
+
         # Check for win condition
         if self._are_all_ships_sunk(opponent_ships, existing_shots + [shot_record]):
             await self.channel_layer.group_send(
@@ -389,6 +439,35 @@ class GameConsumer(AsyncWebsocketConsumer):
             }
         )
     
+    async def _handle_chat_message(self, data):
+        """Handle in-game chat message."""
+        if not self.game_id:
+            await self.send_error('Not in a game')
+            return
+        
+        message = data.get('message', '').strip()
+        if not message:
+            return
+        
+        # Sanitize: limit length
+        message = message[:200]
+        timestamp = datetime.utcnow().isoformat()
+        
+        # Store in Redis
+        self.redis_manager.add_chat_message(self.game_id, self.user.id, self.user.username, message, timestamp)
+        
+        # Broadcast to game group
+        await self.channel_layer.group_send(
+            f"game_{self.game_id}",
+            {
+                'type': 'chat_message',
+                'sender_id': str(self.user.id),
+                'sender_username': self.user.username,
+                'message': message,
+                'timestamp': timestamp,
+            }
+        )
+    
     # Handler methods for group messages
     
     async def player_joined(self, event):
@@ -421,6 +500,16 @@ class GameConsumer(AsyncWebsocketConsumer):
             'type': 'game_ended',
             'winner_id': event['winner_id'],
             'reason': event['reason'],
+        }))
+    
+    async def chat_message(self, event):
+        """Send chat_message event to WebSocket."""
+        await self.send(json.dumps({
+            'type': 'chat_message',
+            'sender_id': event['sender_id'],
+            'sender_username': event['sender_username'],
+            'message': event['message'],
+            'timestamp': event['timestamp'],
         }))
     
     async def friend_online(self, event):
@@ -782,6 +871,22 @@ class GameConsumer(AsyncWebsocketConsumer):
                 
                 self.redis_manager.add_shot(self.game_id, 'player_2', shot_record)
                 ai_shots.append(shot_record)
+
+                # AI taunt on sinking a ship
+                if newly_sunk:
+                    taunt = random.choice(AI_SINK_TAUNTS)
+                    taunt_timestamp = datetime.utcnow().isoformat()
+                    self.redis_manager.add_chat_message(self.game_id, game_meta.get('player_2_id', 'ai'), 'AI', taunt, taunt_timestamp)
+                    await self.channel_layer.group_send(
+                        f"game_{self.game_id}",
+                        {
+                            'type': 'chat_message',
+                            'sender_id': game_meta.get('player_2_id', 'ai'),
+                            'sender_username': 'AI',
+                            'message': taunt,
+                            'timestamp': taunt_timestamp,
+                        }
+                    )
 
                 move_data = {
                     'type': 'game_move',

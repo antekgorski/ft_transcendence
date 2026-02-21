@@ -1,6 +1,7 @@
 /**
  * WebSocket client for real-time game communication
  */
+import API_BASE_URL from '../config';
 
 class GameSocket {
   constructor() {
@@ -48,18 +49,20 @@ class GameSocket {
 
     this.gameId = gameId;
     this.pendingGameId = null;
-    // Use relative WebSocket URL that works through nginx proxy
-    // Ensure we don't accidentally pick up dev port 3000 if we are in prod but something is weird
-    // But window.location.host should be correct.
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let host = window.location.host; // includes port
 
-    // Special case for local dev: frontend 3000 -> backend 8000
-    if (window.location.hostname === 'localhost' && window.location.port === '3000') {
-      host = 'localhost:8000';
+    // Construct WebSocket URL from API_BASE_URL so it perfectly matches the connection setup
+    // e.g. "https://localhost:8080/api" -> "wss://localhost:8080/ws/games/"
+    let wsUrl = API_BASE_URL.replace('/api', '/ws/games/');
+    if (wsUrl.startsWith('http')) {
+      wsUrl = wsUrl.replace('http', 'ws');
+    } else if (wsUrl.startsWith('/')) {
+      // Relative URL fallback
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname === 'localhost' && window.location.port === '3000'
+        ? 'localhost:8000'
+        : window.location.host;
+      wsUrl = `${protocol}//${host}${wsUrl}`;
     }
-
-    const wsUrl = `${protocol}//${host}/ws/games/`;
 
     try {
       this.socket = new WebSocket(wsUrl);
@@ -124,15 +127,17 @@ class GameSocket {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let host = window.location.host; // includes port
-
-    // Special case for local dev: frontend 3000 -> backend 8000
-    if (window.location.hostname === 'localhost' && window.location.port === '3000') {
-      host = 'localhost:8000';
+    // Construct WebSocket URL identically to connect method
+    let wsUrl = API_BASE_URL.replace('/api', '/ws/games/');
+    if (wsUrl.startsWith('http')) {
+      wsUrl = wsUrl.replace('http', 'ws');
+    } else if (wsUrl.startsWith('/')) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname === 'localhost' && window.location.port === '3000'
+        ? 'localhost:8000'
+        : window.location.host;
+      wsUrl = `${protocol}//${host}${wsUrl}`;
     }
-
-    const wsUrl = `${protocol}//${host}/ws/games/`;
 
     try {
       this.socket = new WebSocket(wsUrl);
@@ -257,6 +262,17 @@ class GameSocket {
   sendForfeit() {
     return this.send({
       type: 'game_forfeit',
+    });
+  }
+
+  /**
+   * Send a chat message
+   * @param {string} message - Chat message text
+   */
+  sendChat(message) {
+    return this.send({
+      type: 'chat_message',
+      message,
     });
   }
 
