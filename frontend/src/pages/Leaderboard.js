@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Template } from './Components';
 import api from '../utils/api';
 import { ReturnToMenuButton } from './Components';
@@ -55,7 +56,11 @@ function LeaderboardTable() {
               {leaderboard.map((player, index) => (
                 <tr key={index} className="border-b border-slate-700 hover:bg-slate-700/30 transition-colors">
                   <td className="py-3 px-4 font-semibold text-emerald-400">{player.rank}</td>
-                  <td className="py-3 px-4">{player.username}</td>
+                  <td className="py-3 px-4">
+                    <Link to={`/profile/${player.user_id}`} className="text-blue-400 hover:text-blue-300 hover:underline transition-colors">
+                      {player.username}
+                    </Link>
+                  </td>
                   <td className="py-3 px-4">{player.games_played}</td>
                   <td className="py-3 px-4">{player.games_won}</td>
                   <td className="py-3 px-4">{player.win_rate}%</td>

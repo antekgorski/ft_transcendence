@@ -93,6 +93,7 @@ function Body() {
       <div className="flex gap-6">
         <Link
           to="/game"
+          state={{ startAI: true }}
           className={`px-8 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg flex items-center justify-center ${isSearching ? 'opacity-50 pointer-events-none' : ''}`}
         >
           Play Game

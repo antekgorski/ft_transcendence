@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import WelcomePage from './pages/WelcomePage';
 import RegisterPage from './pages/RegisterPage';
 import ProfilePage from './pages/ProfilePage';
+import UserProfilePage from './pages/UserProfilePage';
 import GameBoard from './pages/GameBoard';
 import RouterPage from './pages/RouterPage';
 import LeaderboardPage from './pages/Leaderboard';
@@ -19,8 +20,8 @@ function AppContent() {
         <Route path="/" element={<WelcomePage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
-		<Route path="/privacy-policy" element={<PrivacyPolicy />} />
-		<Route path="/terms-of-service" element={<TermsOfService />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/terms-of-service" element={<TermsOfService />} />
       </Routes>
     );
   }
@@ -29,6 +30,7 @@ function AppContent() {
     <Routes>
       <Route path="/menu" element={<RouterPage />} />
       <Route path="/game" element={<GameBoard />} />
+      <Route path="/profile/:userId" element={<UserProfilePage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route path="/leaderboard" element={<LeaderboardPage />} />
       <Route path="*" element={<Navigate to="/menu" replace />} />
@@ -47,3 +49,4 @@ function App() {
 }
 
 export default App;
+

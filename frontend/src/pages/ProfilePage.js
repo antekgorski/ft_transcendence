@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
 import { Template, ReturnToMenuButton } from './Components';
 import api from '../utils/api';
@@ -134,6 +135,23 @@ function PlayerStats() {
       <h2 className="text-2xl font-bold text-white mb-4">Player Profile</h2>
       <div className="text-gray-300 space-y-3">
         <p><span className="text-emerald-400 font-semibold">Username:</span> {user?.username || 'Loading...'}</p>
+        <p className="flex items-center gap-2">
+          <span className="text-emerald-400 font-semibold">Status:</span>
+          {user?.is_online ? (
+            <span className="flex items-center gap-1.5">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              <span className="text-emerald-400 font-medium">Online</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-flex rounded-full h-3 w-3 bg-gray-500"></span>
+              <span className="text-gray-400 font-medium">Offline</span>
+            </span>
+          )}
+        </p>
         <p><span className="text-emerald-400 font-semibold">Email:</span> {user?.email || 'N/A'}</p>
 
         <hr className="border-slate-600 my-4" />
@@ -325,6 +343,396 @@ function Avatar() {
   );
 }
 
+function FriendsManager() {
+  const { user } = useContext(AuthContext);
+  const [friends, setFriends] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]);
+  const [friendsLoading, setFriendsLoading] = useState(true);
+  const [friendsError, setFriendsError] = useState('');
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [requestMessage, setRequestMessage] = useState('');
+
+  const getAvatarUrl = (path) => {
+    if (!path) return '/media/avatars/avatar_1.jpg';
+    if (path.startsWith('http')) return path;
+    if (path.startsWith('/media/')) return path;
+    return `/media/${path}`;
+  };
+
+  const fetchFriendsData = async (showLoading = false) => {
+    if (showLoading) setFriendsLoading(true);
+    setFriendsError('');
+    try {
+      const [acceptedResponse, pendingResponse, sentResponse] = await Promise.all([
+        api.get('/social/friendships/accepted/'),
+        api.get('/social/friendships/pending/'),
+        api.get('/social/friendships/sent/'),
+      ]);
+      setFriends(acceptedResponse.data || []);
+      setPendingRequests(pendingResponse.data || []);
+      setSentRequests(sentResponse.data || []);
+    } catch (err) {
+      console.error('Failed to load friends data:', err);
+      if (showLoading) setFriendsError('Failed to load friends data.');
+    } finally {
+      setFriendsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchFriendsData(true);
+      const interval = setInterval(fetchFriendsData, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [user?.id]);
+
+  const handleSearch = async (event) => {
+    event.preventDefault();
+    setSearchError('');
+    setRequestMessage('');
+    setSearchResults([]);
+
+    if (searchQuery.trim().length < 2) {
+      setSearchError('Enter at least 2 characters.');
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const response = await api.get('/auth/users/search/', {
+        params: { q: searchQuery.trim() },
+      });
+      setSearchResults(response.data?.results || []);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Search failed.';
+      setSearchError(errorMsg);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSendRequest = async (userId) => {
+    setRequestMessage('');
+    setSearchError('');
+    try {
+      await api.post('/social/friendships/', { user_id: userId });
+      setRequestMessage('Friend request sent.');
+      await fetchFriendsData();
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to send request.';
+      setSearchError(errorMsg);
+    }
+  };
+
+  const handleCancelRequest = async (friendshipId) => {
+    setFriendsError('');
+    try {
+      await api.delete(`/social/friendships/${friendshipId}/`);
+      await fetchFriendsData();
+    } catch (err) {
+      console.error('Failed to cancel request:', err);
+      setFriendsError('Failed to cancel request.');
+    }
+  };
+
+  // Determine friendship status for a given user ID
+  const getFriendshipStatus = (userId) => {
+    const isFriend = friends.some(
+      (f) => f.requester_data?.id === userId || f.addressee_data?.id === userId
+    );
+    if (isFriend) return 'accepted';
+
+    const isPendingIncoming = pendingRequests.some(
+      (f) => f.requester_data?.id === userId
+    );
+    if (isPendingIncoming) return 'pending_incoming';
+
+    const isPendingSent = sentRequests.some(
+      (f) => f.addressee_data?.id === userId
+    );
+    if (isPendingSent) return 'pending_sent';
+
+    return null;
+  };
+
+  const handleAcceptRequest = async (friendshipId) => {
+    setFriendsError('');
+    try {
+      await api.post(`/social/friendships/${friendshipId}/accept/`);
+      fetchFriendsData();
+    } catch (err) {
+      console.error('Failed to accept request:', err);
+      setFriendsError('Failed to accept request.');
+    }
+  };
+
+  const handleRejectRequest = async (friendshipId) => {
+    setFriendsError('');
+    try {
+      await api.post(`/social/friendships/${friendshipId}/reject/`);
+      fetchFriendsData();
+    } catch (err) {
+      console.error('Failed to reject request:', err);
+      setFriendsError('Failed to reject request.');
+    }
+  };
+
+  const handleRemoveFriend = async (friendshipId) => {
+    setFriendsError('');
+    try {
+      await api.delete(`/social/friendships/${friendshipId}/`);
+      fetchFriendsData();
+    } catch (err) {
+      console.error('Failed to remove friend:', err);
+      setFriendsError('Failed to remove friend.');
+    }
+  };
+
+  return (
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-slate-700">
+      <h2 className="text-2xl font-bold text-white mb-4">Friends</h2>
+
+      {friendsError && (
+        <p className="text-red-400 mb-4">{friendsError}</p>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h3 className="text-lg font-semibold text-emerald-400 mb-3">Search by Login</h3>
+          <form onSubmit={handleSearch} className="space-y-3">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Type a username or display name"
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400"
+            />
+            <button
+              type="submit"
+              disabled={searchLoading}
+              className="w-full px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-500 rounded-md text-white font-semibold transition-colors"
+            >
+              {searchLoading ? 'Searching...' : 'Search'}
+            </button>
+          </form>
+
+          {searchError && (
+            <p className="text-red-400 text-sm mt-2">{searchError}</p>
+          )}
+          {requestMessage && (
+            <p className="text-emerald-400 text-sm mt-2">{requestMessage}</p>
+          )}
+
+          {searchResults.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {searchResults.map((result) => (
+                <div
+                  key={result.id}
+                  className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                >
+                  <Link to={`/profile/${result.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    <img
+                      src={getAvatarUrl(result.avatar_url)}
+                      alt={result.username}
+                      className="w-10 h-10 rounded-full object-cover"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = '/media/avatars/avatar_1.jpg';
+                      }}
+                    />
+                    <div>
+                      <p className="text-white font-semibold">{result.display_name || result.username}</p>
+                      <p className="text-gray-400 text-sm">@{result.username}</p>
+                    </div>
+                  </Link>
+                  {(() => {
+                    const status = getFriendshipStatus(result.id);
+                    if (status === 'accepted') {
+                      return (
+                        <span className="px-3 py-2 bg-emerald-600/30 text-emerald-400 rounded-md text-sm font-semibold">
+                          Friends
+                        </span>
+                      );
+                    }
+                    if (status === 'pending_sent') {
+                      return (
+                        <span className="px-3 py-2 bg-yellow-600/30 text-yellow-400 rounded-md text-sm font-semibold">
+                          Pending
+                        </span>
+                      );
+                    }
+                    if (status === 'pending_incoming') {
+                      return (
+                        <span className="px-3 py-2 bg-blue-600/30 text-blue-400 rounded-md text-sm font-semibold">
+                          Respond
+                        </span>
+                      );
+                    }
+                    return (
+                      <button
+                        onClick={() => handleSendRequest(result.id)}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-semibold"
+                      >
+                        Add
+                      </button>
+                    );
+                  })()}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h3 className="text-lg font-semibold text-emerald-400 mb-3">Pending Requests</h3>
+          {friendsLoading ? (
+            <p className="text-gray-400">Loading...</p>
+          ) : pendingRequests.length === 0 ? (
+            <p className="text-gray-400">No pending requests.</p>
+          ) : (
+            <div className="space-y-2">
+              {pendingRequests.map((request) => {
+                const requester = request.requester_data;
+                return (
+                  <div
+                    key={request.id}
+                    className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                  >
+                    <Link to={`/profile/${requester?.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                      <img
+                        src={getAvatarUrl(requester?.avatar_url)}
+                        alt={requester?.username}
+                        className="w-10 h-10 rounded-full object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/media/avatars/avatar_1.jpg';
+                        }}
+                      />
+                      <div>
+                        <p className="text-white font-semibold">{requester?.display_name || requester?.username}</p>
+                        <p className="text-gray-400 text-sm">@{requester?.username}</p>
+                      </div>
+                    </Link>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAcceptRequest(request.id)}
+                        className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-sm font-semibold"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => handleRejectRequest(request.id)}
+                        className="px-3 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-md text-sm font-semibold"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <h3 className="text-lg font-semibold text-emerald-400 mb-3 mt-6">Sent Requests</h3>
+          {friendsLoading ? (
+            <p className="text-gray-400">Loading...</p>
+          ) : sentRequests.length === 0 ? (
+            <p className="text-gray-400">No sent requests.</p>
+          ) : (
+            <div className="space-y-2">
+              {sentRequests.map((request) => {
+                const addressee = request.addressee_data;
+                return (
+                  <div
+                    key={request.id}
+                    className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                  >
+                    <Link to={`/profile/${addressee?.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                      <img
+                        src={getAvatarUrl(addressee?.avatar_url)}
+                        alt={addressee?.username}
+                        className="w-10 h-10 rounded-full object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/media/avatars/avatar_1.jpg';
+                        }}
+                      />
+                      <div>
+                        <p className="text-white font-semibold">{addressee?.display_name || addressee?.username}</p>
+                        <p className="text-gray-400 text-sm">@{addressee?.username}</p>
+                      </div>
+                    </Link>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-1 bg-yellow-600/30 text-yellow-400 rounded text-xs font-semibold">
+                        Pending
+                      </span>
+                      <button
+                        onClick={() => handleCancelRequest(request.id)}
+                        className="px-3 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-md text-sm font-semibold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <h3 className="text-lg font-semibold text-emerald-400 mb-3 mt-6">Friends List</h3>
+          {friendsLoading ? (
+            <p className="text-gray-400">Loading...</p>
+          ) : friends.length === 0 ? (
+            <p className="text-gray-400">No friends yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {friends.map((friendship) => {
+                const friend = friendship.requester_data?.id === user?.id
+                  ? friendship.addressee_data
+                  : friendship.requester_data;
+                return (
+                  <div
+                    key={friendship.id}
+                    className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                  >
+                    <Link to={`/profile/${friend?.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                      <img
+                        src={getAvatarUrl(friend?.avatar_url)}
+                        alt={friend?.username}
+                        className="w-10 h-10 rounded-full object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/media/avatars/avatar_1.jpg';
+                        }}
+                      />
+                      <div>
+                        <p className="text-white font-semibold">{friend?.display_name || friend?.username}</p>
+                        <p className="text-gray-400 text-sm">@{friend?.username}</p>
+                      </div>
+                    </Link>
+                    <button
+                      onClick={() => handleRemoveFriend(friendship.id)}
+                      className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-semibold"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GameHistory() {
   const { user } = useContext(AuthContext);
   const [games, setGames] = useState([]);
@@ -405,7 +813,15 @@ function GameHistory() {
                 return (
                   <tr key={index} className="border-b border-slate-700 hover:bg-slate-700/30 transition-colors">
                     <td className="py-3 px-4">{formatDate(game.ended_at)}</td>
-                    <td className="py-3 px-4">{game.opponent_username}</td>
+                    <td className="py-3 px-4">
+                      {game.opponent_id && game.game_type !== 'ai' ? (
+                        <Link to={`/profile/${game.opponent_id}`} className="text-blue-400 hover:text-blue-300 hover:underline transition-colors">
+                          {game.opponent_username}
+                        </Link>
+                      ) : (
+                        game.opponent_username
+                      )}
+                    </td>
                     <td className="py-3 px-4">{game.game_type_display}</td>
                     <td className={`py-3 px-4 font-semibold ${resultColor}`}>{resultText}</td>
                     <td className="py-3 px-4">{formatDuration(game.duration_seconds)}</td>
@@ -431,6 +847,7 @@ function Body() {
         <PlayerStats />
         <Avatar />
       </div>
+      <FriendsManager />
       <GameHistory />
     </div>
   );

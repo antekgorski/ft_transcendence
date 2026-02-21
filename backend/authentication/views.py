@@ -18,6 +18,7 @@ from .models import User
 from django.conf import settings
 import requests
 from django.shortcuts import redirect
+from game.redis_manager import GameStateManager
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -243,6 +244,9 @@ def get_current_user(request):
     
     try:
         user = User.objects.get(id=user_id)
+        redis_manager = GameStateManager()
+        # Refresh online presence on every /me/ call (acts as heartbeat)
+        redis_manager.set_user_online(str(user.id))
         return Response(
             {
                 "id": str(user.id),
@@ -252,6 +256,7 @@ def get_current_user(request):
                 "avatar_url": get_safe_avatar_url(user.avatar_url),
                 "custom_avatar_url": get_safe_avatar_url(user.custom_avatar_url),
                 "intra_avatar_url": get_safe_avatar_url(user.intra_avatar_url),
+                "is_online": redis_manager.is_user_online(str(user.id)),
             },
             status=status.HTTP_200_OK,
         )
@@ -264,6 +269,69 @@ def get_current_user(request):
             },
             status=status.HTTP_200_OK,
         )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def search_users(request):
+    """
+    Search users by username or display name.
+    Query param: q (min 2 chars)
+    """
+    query = request.GET.get('q', '').strip()
+
+    if len(query) < 2:
+        return Response(
+            {"error": "Search query must be at least 2 characters"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    users = (
+        User.objects.filter(
+            Q(username__icontains=query) | Q(display_name__icontains=query)
+        )
+        .exclude(id=request.user.id)
+        .order_by('username')[:20]
+    )
+
+    results = [
+        {
+            "id": str(user.id),
+            "username": user.username,
+            "display_name": user.display_name,
+            "avatar_url": get_safe_avatar_url(user.avatar_url),
+        }
+        for user in users
+    ]
+
+    return Response({"results": results}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_profile(request, user_id):
+    """
+    Get public profile data for a specific user.
+    """
+    try:
+        user = User.objects.get(id=user_id, is_active=True)
+    except User.DoesNotExist:
+        return Response(
+            {"error": "User not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    redis_manager = GameStateManager()
+    return Response(
+        {
+            "id": str(user.id),
+            "username": user.username,
+            "display_name": user.display_name,
+            "avatar_url": get_safe_avatar_url(user.avatar_url),
+            "is_online": redis_manager.is_user_online(str(user_id)),
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @ensure_csrf_cookie

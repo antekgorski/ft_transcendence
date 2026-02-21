@@ -258,6 +258,25 @@ class GameStateManager:
         data = self.redis_client.smembers(inactive_key)
         return [json.loads(cell) for cell in data] if data else []
 
+    def add_chat_message(self, game_id, sender_id, sender_username, message, timestamp):
+        """Store a chat message for a game."""
+        chat_key = f"game:{game_id}:chat"
+        msg_data = json.dumps({
+            'sender_id': str(sender_id),
+            'sender_username': sender_username,
+            'message': message,
+            'timestamp': timestamp,
+        })
+        self.redis_client.rpush(chat_key, msg_data)
+        self.redis_client.ltrim(chat_key, -100, -1)  # Keep last 100 messages
+        self.redis_client.expire(chat_key, self.game_expiration)
+
+    def get_chat_messages(self, game_id):
+        """Get all chat messages for a game."""
+        chat_key = f"game:{game_id}:chat"
+        data = self.redis_client.lrange(chat_key, 0, -1)
+        return [json.loads(msg) for msg in data] if data else []
+
     def _pvp_queue_key(self):
         return "pvp:queue"
 

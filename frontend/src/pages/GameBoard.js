@@ -1,6 +1,6 @@
 // Importujemy React i hooki do zarządzania stanem komponentu.
 import React, { useState, useEffect, useContext, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Template } from './Components';
 import API_BASE_URL from '../config';
@@ -39,6 +39,7 @@ const createEmptyBoard = () => {
 // Główny komponent GameBoard z logiką gry przeniesiony do Body.
 function Body() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useContext(AuthContext);
 
   // Ref to prevent concurrent initialization
@@ -80,6 +81,11 @@ function Body() {
   const [gameResult, setGameResult] = useState(null); // 'win', 'lose', or null
   const [redirectCountdown, setRedirectCountdown] = useState(3);
   const [shotHistory, setShotHistory] = useState([]);
+
+  // Stan dla czatu w grze
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const chatEndRef = useRef(null);
 
   // Stan dla WebSocket i gameplay
   const [isMyTurn, setIsMyTurn] = useState(false);
@@ -282,6 +288,8 @@ function Body() {
 
           if (activeGameResponse.data && activeGameResponse.data.id) {
             currentGameId = activeGameResponse.data.id;
+            const activeGame = activeGameResponse.data;
+            const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
             setGameId(currentGameId);
             setGameInitialized(true);
 
@@ -291,8 +299,11 @@ function Body() {
                 { withCredentials: true }
               );
 
-              if (shipsStatusResponse.data.player_1_ready && shipsStatusResponse.data.player_1_ships) {
-                const shipData = shipsStatusResponse.data.player_1_ships;
+              const myShipsReady = isP1 ? shipsStatusResponse.data.player_1_ready : shipsStatusResponse.data.player_2_ready;
+              const myShipsData = isP1 ? shipsStatusResponse.data.player_1_ships : shipsStatusResponse.data.player_2_ships;
+
+              if (myShipsReady && myShipsData) {
+                const shipData = myShipsData;
                 const { board, ships } = loadShipsToBoard(shipData.positions);
 
                 setPlacedShips(ships);
@@ -306,11 +317,28 @@ function Body() {
                     `${API_BASE_URL}/games/${currentGameId}/shots/`,
                     { withCredentials: true }
                   );
-                  const { player_1_shots, player_2_shots, player_1_inactive, player_2_inactive, current_turn } = shotsResponse.data;
-                  const restored = restoreGameStateFromShots(board, player_1_shots, player_2_shots, player_1_inactive, player_2_inactive);
+                  const { player_1_shots, player_2_shots, player_1_inactive, player_2_inactive, current_turn, chat_messages } = shotsResponse.data;
+
+                  const myShots = isP1 ? player_1_shots : player_2_shots;
+                  const enemyShots = isP1 ? player_2_shots : player_1_shots;
+                  const myInactive = isP1 ? player_1_inactive : player_2_inactive;
+                  const enemyInactive = isP1 ? player_2_inactive : player_1_inactive;
+
+                  const restored = restoreGameStateFromShots(board, myShots, enemyShots, myInactive, enemyInactive);
                   setPlayerBoard(restored.playerBoard);
                   setEnemyBoard(restored.enemyBoard);
                   setShotHistory(restored.shotHistory);
+
+                  if (chat_messages) {
+                    const loadedMessages = chat_messages.map(msg => ({
+                      senderId: msg.sender_id,
+                      senderUsername: msg.sender_username,
+                      message: msg.message,
+                      timestamp: msg.timestamp,
+                      isMe: msg.sender_id === user.id?.toString(),
+                    }));
+                    setChatMessages(loadedMessages);
+                  }
 
                   // Set whose turn it is
                   if (current_turn) {
@@ -364,6 +392,14 @@ function Body() {
           }
         }
 
+        // If no active game was found and we weren't instructed to start AI, redirect properly.
+        if (!location.state?.startAI) {
+          setStatusMessage("Active game not found! It might have timed out. Redirecting to menu...");
+          setGameLoading(false);
+          setTimeout(() => navigate('/menu'), 3000);
+          return;
+        }
+
         let newGameId = null;
         try {
           setIsCreatingGame(true);
@@ -384,6 +420,9 @@ function Body() {
 
             if (activeGameResponse.data && activeGameResponse.data.id) {
               const existingGameId = activeGameResponse.data.id;
+              const activeGame = activeGameResponse.data;
+              const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
+
               setGameId(existingGameId);
               setGameInitialized(true);
 
@@ -393,8 +432,11 @@ function Body() {
                   { withCredentials: true }
                 );
 
-                if (shipsStatusResponse.data.player_1_ready && shipsStatusResponse.data.player_1_ships) {
-                  const shipData = shipsStatusResponse.data.player_1_ships;
+                const myShipsReady = isP1 ? shipsStatusResponse.data.player_1_ready : shipsStatusResponse.data.player_2_ready;
+                const myShipsData = isP1 ? shipsStatusResponse.data.player_1_ships : shipsStatusResponse.data.player_2_ships;
+
+                if (myShipsReady && myShipsData) {
+                  const shipData = myShipsData;
                   const { board, ships } = loadShipsToBoard(shipData.positions);
 
                   setPlacedShips(ships);
@@ -408,11 +450,28 @@ function Body() {
                       `${API_BASE_URL}/games/${existingGameId}/shots/`,
                       { withCredentials: true }
                     );
-                    const { player_1_shots, player_2_shots, player_1_inactive, player_2_inactive, current_turn } = shotsResponse.data;
-                    const restored = restoreGameStateFromShots(board, player_1_shots, player_2_shots, player_1_inactive, player_2_inactive);
+                    const { player_1_shots, player_2_shots, player_1_inactive, player_2_inactive, current_turn, chat_messages } = shotsResponse.data;
+
+                    const myShots = isP1 ? player_1_shots : player_2_shots;
+                    const enemyShots = isP1 ? player_2_shots : player_1_shots;
+                    const myInactive = isP1 ? player_1_inactive : player_2_inactive;
+                    const enemyInactive = isP1 ? player_2_inactive : player_1_inactive;
+
+                    const restored = restoreGameStateFromShots(board, myShots, enemyShots, myInactive, enemyInactive);
                     setPlayerBoard(restored.playerBoard);
                     setEnemyBoard(restored.enemyBoard);
                     setShotHistory(restored.shotHistory);
+
+                    if (chat_messages) {
+                      const loadedMessages = chat_messages.map(msg => ({
+                        senderId: msg.sender_id,
+                        senderUsername: msg.sender_username,
+                        message: msg.message,
+                        timestamp: msg.timestamp,
+                        isMe: msg.sender_id === user.id?.toString(),
+                      }));
+                      setChatMessages(loadedMessages);
+                    }
 
                     // Set whose turn it is
                     if (current_turn) {
@@ -650,6 +709,18 @@ function Body() {
       gameSocket.on('player_joined', (data) => {
         // Player joined
       });
+
+      // Handle chat messages
+      gameSocket.on('chat_message', (data) => {
+        const msg = {
+          senderId: data.sender_id,
+          senderUsername: data.sender_username,
+          message: data.message,
+          timestamp: data.timestamp,
+          isMe: data.sender_id === user.id?.toString(),
+        };
+        setChatMessages(prev => [...prev, msg]);
+      });
     };
 
     setupSocketHandlers();
@@ -662,8 +733,16 @@ function Body() {
       gameSocket.off('game_forfeit');
       gameSocket.off('connected');
       gameSocket.off('player_joined');
+      gameSocket.off('chat_message');
     };
-  }, [isPlacingShips, gameId, user.id, enemyBoard, playerBoard, shotHistory]);
+  }, [isPlacingShips, gameId, user.id]);
+
+  // Auto-scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages]);
 
   // Funkcja sprawdzająca, czy statek może zostać ustawiony w danym miejscu.
   const canPlaceShip = (board, row, col, size, dir) => {
@@ -1482,7 +1561,7 @@ function Body() {
   return (
     // Główny kontener strony.
     <div className="space-y-6 w-full max-w-6xl mx-auto text-white">
-    {/* <div className="text-white"> */}
+      {/* <div className="text-white"> */}
       <div className="grid grid-cols-3 max-w-6xl mx-auto mb-6 ">
         <div >
           {/* Przycisk powrotu do menu */}
@@ -1744,6 +1823,70 @@ function Body() {
           </div>
         </div>
       </div>
+
+      {/* Game Chat */}
+      {!isPlacingShips && (
+        <div className="max-w-6xl mx-auto mt-8 px-4">
+          <div className="bg-slate-800/60 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold mb-3">💬 Game Chat</h3>
+
+            {/* Messages area */}
+            <div className="overflow-y-auto space-y-2 mb-3 border border-slate-700 rounded-lg p-3 bg-slate-900/40" style={{ maxHeight: '240px', minHeight: '80px' }}>
+              {chatMessages.length === 0 && (
+                <p className="text-xs text-slate-500 text-center mt-4">No messages yet. Say hi!</p>
+              )}
+              {chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}
+                >
+                  <span className="text-xs text-slate-400 mb-0.5">
+                    {msg.isMe ? 'You' : msg.senderUsername}
+                  </span>
+                  <div
+                    className={`px-3 py-1.5 rounded-lg text-sm max-w-[70%] break-words ${msg.isMe
+                      ? 'bg-indigo-600 text-white'
+                      : msg.senderUsername === 'AI'
+                        ? 'bg-amber-600/80 text-white'
+                        : 'bg-slate-700 text-slate-200'
+                      }`}
+                  >
+                    {msg.message}
+                  </div>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input area */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const text = chatInput.trim();
+                if (!text) return;
+                gameSocket.sendChat(text);
+                setChatInput('');
+              }}
+              className="flex gap-2"
+            >
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Type a message..."
+                maxLength={200}
+                className="flex-1 bg-slate-700 text-white text-sm rounded px-3 py-2 border border-slate-600 focus:border-indigo-500 focus:outline-none placeholder-slate-400"
+              />
+              <button
+                type="submit"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded font-semibold transition-colors"
+              >
+                Send
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Shot History */}
       {!isPlacingShips && shotHistory.length > 0 && (

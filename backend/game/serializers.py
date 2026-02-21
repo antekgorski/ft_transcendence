@@ -28,10 +28,23 @@ class PlayerStatsSerializer(serializers.ModelSerializer):
 
 class UserSimpleSerializer(serializers.ModelSerializer):
     """Simple user serializer for game responses."""
+    avatar_url = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = ['id', 'username', 'display_name', 'avatar_url']
         read_only_fields = fields
+
+    def get_avatar_url(self, obj):
+        """Return avatar URL only if the file actually exists."""
+        field = obj.avatar_url
+        if field and field.name:
+            try:
+                if field.storage.exists(field.name):
+                    return field.url
+            except Exception:
+                pass
+        return None
 
 
 class GameSerializer(serializers.ModelSerializer):
@@ -180,6 +193,7 @@ class LeaderboardSerializer(serializers.Serializer):
 
 class GameHistorySerializer(serializers.ModelSerializer):
     """Serializer for game history entries."""
+    opponent_id = serializers.SerializerMethodField()
     opponent_username = serializers.SerializerMethodField()
     opponent_avatar_url = serializers.SerializerMethodField()
     result = serializers.SerializerMethodField()
@@ -189,6 +203,7 @@ class GameHistorySerializer(serializers.ModelSerializer):
         model = Game
         fields = [
             'id',
+            'opponent_id',
             'opponent_username',
             'opponent_avatar_url',
             'game_type',
@@ -203,6 +218,17 @@ class GameHistorySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
     
+    def get_opponent_id(self, obj):
+        """Get the opponent's user ID."""
+        request = self.context.get('request')
+        if request:
+            current_user = request.user
+            if obj.player_1_id == current_user.id:
+                return str(obj.player_2_id) if obj.player_2_id else None
+            else:
+                return str(obj.player_1_id) if obj.player_1_id else None
+        return None
+
     def get_opponent_username(self, obj):
         """Get the opponent's username based on the current user."""
         request = self.context.get('request')

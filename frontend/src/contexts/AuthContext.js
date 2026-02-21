@@ -13,10 +13,14 @@ export const AuthProvider = ({ children }) => {
     try {
       // Verify authentication via backend - this validates the session cookie
       const res = await api.get('/auth/me/');
-      if (res.data.user === null) {
+      const resolvedUser = Object.prototype.hasOwnProperty.call(res.data, 'user')
+        ? res.data.user
+        : res.data;
+
+      if (resolvedUser === null) {
         setUser(null);
       } else {
-        setUser(res.data);
+        setUser(resolvedUser);
         // Connect to WebSocket after successful authentication
         gameSocket.preConnect();
       }

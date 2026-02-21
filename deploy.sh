@@ -31,7 +31,7 @@ fi
 # Helper function to run remote commands
 run_ssh() {
     if [ -n "$SSH_PASS" ]; then
-        sshpass -p "$SSH_PASS" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "$1"
+        sshpass -p "$SSH_PASS" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" "$1"
     else
         ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "$1"
     fi
@@ -42,7 +42,7 @@ run_scp() {
     SRC=$1
     DEST=$2
     if [ -n "$SSH_PASS" ]; then
-        sshpass -p "$SSH_PASS" scp -P "$SSH_PORT" -o StrictHostKeyChecking=no "$SRC" "$SSH_USER@$SSH_HOST:$DEST"
+        sshpass -p "$SSH_PASS" scp -P "$SSH_PORT" -o StrictHostKeyChecking=accept-new "$SRC" "$SSH_USER@$SSH_HOST:$DEST"
     else
         scp -P "$SSH_PORT" "$SRC" "$SSH_USER@$SSH_HOST:$DEST"
     fi

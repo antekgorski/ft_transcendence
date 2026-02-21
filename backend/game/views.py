@@ -612,7 +612,6 @@ class GameViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])
-    @action(detail=True, methods=['post'])
     def accept(self, request, id=None):
         """Accept a game invitation."""
         game_meta = self.redis_manager.get_game_meta(id)
@@ -1009,11 +1008,7 @@ class GameViewSet(viewsets.ModelViewSet):
             if not ai_ships or not ai_ships.get('positions'):
                 try:
                     ai_board = self.ai_opponent.generate_initial_board()
-                    # Check if set_board_state expects 'player_2' or 'ai'? 
-                    # Usually AI is player_2. The original code used 'ai' as key for set_board_state?
-                    # Let's check the garbage code: self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
-                    # And set_ships uses 'player_2'.
-                    self.redis_manager.set_board_state(id, 'player_2', ai_board)
+                    self.redis_manager.set_board_state(id, 'ai', ai_board)
                     
                     # We need _extract_ai_ships or similar helper.
                     # Assuming self._extract_ai_ships exists in the class.
@@ -1097,6 +1092,7 @@ class GameViewSet(viewsets.ModelViewSet):
         player_1_inactive = self.redis_manager.get_inactive_cells(id, 'player_1') or []
         player_2_inactive = self.redis_manager.get_inactive_cells(id, 'player_2') or []
         current_turn = self.redis_manager.get_current_turn(id)
+        chat_messages = self.redis_manager.get_chat_messages(id) or []
         
         # Sort shots by timestamp (Redis returns in reverse order)
         def sort_by_timestamp(shots):
@@ -1107,7 +1103,8 @@ class GameViewSet(viewsets.ModelViewSet):
             'player_2_shots': sort_by_timestamp(player_2_shots),
             'player_1_inactive': player_1_inactive,
             'player_2_inactive': player_2_inactive,
-            'current_turn': current_turn
+            'current_turn': current_turn,
+            'chat_messages': chat_messages
         })
 
     @action(detail=False, methods=['get'])
@@ -1247,30 +1244,3 @@ class GameViewSet(viewsets.ModelViewSet):
             
             player_1_stats.save()
             
-    def _extract_ai_ships(self, board):
-        """Extract ship positions from AI board grid."""
-        ships = {}
-        # Board might be a dict with string keys "0".."9" or a list
-        is_dict = isinstance(board, dict)
-        
-        for y in range(10):  # 10x10 grid
-            row_key = str(y) if is_dict else y
-            if is_dict and row_key not in board:
-                continue
-                
-            row = board[row_key]
-            for x in range(10):
-                col_key = str(x) if isinstance(row, dict) else x
-                # Handle case where row might be list or dict
-                if isinstance(row, dict) and col_key not in row:
-                    continue
-                    
-                cell = row[col_key]
-                if cell['type'] == 'ship':
-                    ship_id = cell['shipId']
-                    if ship_id not in ships:
-                        ships[ship_id] = []
-                    ships[ship_id].append({'x': x, 'y': y})
-        
-        # Format as expected by game logic
-        return {'positions': [pos for ship_pos in ships.values() for pos in ship_pos]}

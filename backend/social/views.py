@@ -118,6 +118,18 @@ class FriendshipViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=False, methods=['get'])
+    def sent(self, request):
+        """Get sent friend requests for current user."""
+        user = request.user
+        sent_requests = Friendship.objects.filter(
+            requester=user,
+            status='pending'
+        ).order_by('-created_at')
+        
+        serializer = self.get_serializer(sent_requests, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
     def accepted(self, request):
         """Get accepted friendships for current user."""
         user = request.user
