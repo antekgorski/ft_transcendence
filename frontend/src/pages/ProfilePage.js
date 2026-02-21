@@ -135,6 +135,23 @@ function PlayerStats() {
       <h2 className="text-2xl font-bold text-white mb-4">Player Profile</h2>
       <div className="text-gray-300 space-y-3">
         <p><span className="text-emerald-400 font-semibold">Username:</span> {user?.username || 'Loading...'}</p>
+        <p className="flex items-center gap-2">
+          <span className="text-emerald-400 font-semibold">Status:</span>
+          {user?.is_online ? (
+            <span className="flex items-center gap-1.5">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              <span className="text-emerald-400 font-medium">Online</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-flex rounded-full h-3 w-3 bg-gray-500"></span>
+              <span className="text-gray-400 font-medium">Offline</span>
+            </span>
+          )}
+        </p>
         <p><span className="text-emerald-400 font-semibold">Email:</span> {user?.email || 'N/A'}</p>
 
         <hr className="border-slate-600 my-4" />
