@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import register, login, get_current_user, logout, set_avatar, update_profile, csrf, upload_avatar, search_users
+from .views import register, login, get_current_user, logout, set_avatar, update_profile, csrf, upload_avatar, search_users, get_user_profile
 # from (42 OAuth)
 from .views import oauth_42_start, oauth_42_callback
 
@@ -26,4 +26,6 @@ urlpatterns = [
     path('avatar/upload/', upload_avatar, name='upload_avatar'),
     # Search users
     path('users/search/', search_users, name='search_users'),
+    # Public user profile
+    path('users/<uuid:user_id>/', get_user_profile, name='get_user_profile'),
 ]

@@ -302,6 +302,31 @@ def search_users(request):
     return Response({"results": results}, status=status.HTTP_200_OK)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_profile(request, user_id):
+    """
+    Get public profile data for a specific user.
+    """
+    try:
+        user = User.objects.get(id=user_id, is_active=True)
+    except User.DoesNotExist:
+        return Response(
+            {"error": "User not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return Response(
+        {
+            "id": str(user.id),
+            "username": user.username,
+            "display_name": user.display_name,
+            "avatar_url": get_safe_avatar_url(user.avatar_url),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
 @ensure_csrf_cookie
 @api_view(['GET'])
 @permission_classes([AllowAny])

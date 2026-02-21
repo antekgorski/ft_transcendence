@@ -5,10 +5,23 @@ from authentication.models import User
 
 class UserSimpleSerializer(serializers.ModelSerializer):
     """Simple user serializer for social responses."""
+    avatar_url = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = ['id', 'username', 'display_name', 'avatar_url', 'created_at']
         read_only_fields = fields
+
+    def get_avatar_url(self, obj):
+        """Return avatar URL only if the file actually exists."""
+        field = obj.avatar_url
+        if field and field.name:
+            try:
+                if field.storage.exists(field.name):
+                    return field.url
+            except Exception:
+                pass
+        return None
 
 
 class FriendshipSerializer(serializers.ModelSerializer):
