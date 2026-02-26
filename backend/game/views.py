@@ -1019,6 +1019,7 @@ class GameViewSet(viewsets.ModelViewSet):
                     if not ai_ships:
                          raise ValueError("Failed to extract AI ships")
                     self.redis_manager.set_ships(id, 'player_2', ai_ships)
+                    self.redis_manager.set_player_ready(id, 'player_2')
                 except Exception as e:
                     logger.error(f"AI initialization failed for game {id}: {e}")
                     return Response(

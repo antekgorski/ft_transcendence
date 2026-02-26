@@ -86,6 +86,8 @@ function Body() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef(null);
+  const [bothReady, setBothReady] = useState(false);
+  const readyNoticeSentRef = useRef(false);
 
   // Stan dla WebSocket i gameplay
   const [isMyTurn, setIsMyTurn] = useState(false);
@@ -301,6 +303,7 @@ function Body() {
 
               const myShipsReady = isP1 ? shipsStatusResponse.data.player_1_ready : shipsStatusResponse.data.player_2_ready;
               const myShipsData = isP1 ? shipsStatusResponse.data.player_1_ships : shipsStatusResponse.data.player_2_ships;
+              setBothReady(Boolean(shipsStatusResponse.data?.both_ready));
 
               if (myShipsReady && myShipsData) {
                 const shipData = myShipsData;
@@ -409,6 +412,8 @@ function Body() {
             { withCredentials: true }
           );
           newGameId = response.data.id;
+          setBothReady(false);
+          readyNoticeSentRef.current = false;
           setGameId(newGameId);
           setGameInitialized(true);
         } catch (createErr) {
@@ -434,6 +439,7 @@ function Body() {
 
                 const myShipsReady = isP1 ? shipsStatusResponse.data.player_1_ready : shipsStatusResponse.data.player_2_ready;
                 const myShipsData = isP1 ? shipsStatusResponse.data.player_1_ships : shipsStatusResponse.data.player_2_ships;
+                setBothReady(Boolean(shipsStatusResponse.data?.both_ready));
 
                 if (myShipsReady && myShipsData) {
                   const shipData = myShipsData;
@@ -595,6 +601,29 @@ function Body() {
     return () => clearTimeout(timer);
   }, [redirectCountdown, gameResult, navigate]);
 
+  const addSystemMessage = (message) => {
+    setChatMessages(prev => [...prev, {
+      senderId: 'system',
+      senderUsername: 'System',
+      message,
+      timestamp: new Date().toISOString(),
+      isMe: false,
+    }]);
+  };
+
+  const checkReadyStatus = async () => {
+    if (!gameId) return;
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/games/${gameId}/ships_status/`,
+        { withCredentials: true }
+      );
+      setBothReady(Boolean(response.data?.both_ready));
+    } catch (err) {
+      // Ignore transient errors during polling
+    }
+  };
+
   // Setup WebSocket handlers for game communication
   useEffect(() => {
     // Only setup WebSocket if game has started (not placing ships)
@@ -721,6 +750,17 @@ function Body() {
         };
         setChatMessages(prev => [...prev, msg]);
       });
+
+      gameSocket.on('error', (data) => {
+        if (!data?.message) return;
+        if (data.message === 'Both players must place ships before starting chat') {
+          setStatusMessage('Message not sent. Opponent has not started the game yet.');
+          return;
+        }
+        if (data.message === 'Both players must place ships before shooting') {
+          setStatusMessage('Opponent is not ready yet. Please wait for them to start the game.');
+        }
+      });
     };
 
     setupSocketHandlers();
@@ -734,8 +774,30 @@ function Body() {
       gameSocket.off('connected');
       gameSocket.off('player_joined');
       gameSocket.off('chat_message');
+      gameSocket.off('error');
     };
   }, [isPlacingShips, gameId, user.id]);
+
+  useEffect(() => {
+    if (!gameId || isPlacingShips || bothReady || gameResult) return;
+
+    const pollReady = async () => {
+      await checkReadyStatus();
+    };
+
+    pollReady();
+    const intervalId = setInterval(pollReady, 2000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [gameId, isPlacingShips, bothReady, gameResult]);
+
+  useEffect(() => {
+    if (!bothReady || isPlacingShips || readyNoticeSentRef.current) return;
+    addSystemMessage('Opponent is ready to play. You can now chat with each other.');
+    readyNoticeSentRef.current = true;
+  }, [bothReady, isPlacingShips]);
 
   // Auto-scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -1226,6 +1288,8 @@ function Body() {
     setIsMyTurn(false);
     setIsWaitingForResponse(false);
     setShotHistory([]);
+    setBothReady(false);
+    readyNoticeSentRef.current = false;
     initializingRef.current = false;
     setGameLoading(true);
 
@@ -1237,6 +1301,8 @@ function Body() {
           { game_type: 'ai' },
           { withCredentials: true }
         );
+        setBothReady(false);
+        readyNoticeSentRef.current = false;
         setGameId(response.data.id);
         setGameInitialized(true);
         setStatusMessage('Game created! Place your ships on your board.');
@@ -1864,7 +1930,11 @@ function Body() {
                 e.preventDefault();
                 const text = chatInput.trim();
                 if (!text) return;
-                gameSocket.sendChat(text);
+                const sent = gameSocket.sendChat(text);
+                if (!sent) {
+                  setStatusMessage('Connection lost. Please reconnect.');
+                  return;
+                }
                 setChatInput('');
               }}
               className="flex gap-2"
