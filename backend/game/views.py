@@ -601,6 +601,7 @@ class GameViewSet(viewsets.ModelViewSet):
             )
         
         self.redis_manager.set_ships(game_id, 'player_2', ai_ships)
+        self.redis_manager.set_player_ready(game_id, 'player_2')
         
         return Response({
             'id': game_id,

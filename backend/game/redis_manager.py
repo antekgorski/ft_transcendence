@@ -186,7 +186,10 @@ class GameStateManager:
     def end_game(self, game_id):
         """Mark game as ended and prepare for cleanup."""
         game_key = f"game:{game_id}"
-        self.redis_client.hset(game_key, "ended_at", datetime.utcnow().isoformat())
+        self.redis_client.hset(game_key, mapping={
+            "ended_at": datetime.utcnow().isoformat(),
+            "status": "completed"
+        })
         # Reduce expiration for ended games (keep for 24 hours instead of 7 days)
         self.redis_client.expire(game_key, 86400)
     
