@@ -324,3 +324,22 @@ class GameStateManager:
                 self.remove_from_pvp_queue(opponent_id)
                 continue
             return opponent_id
+
+    def set_player_ready(self, game_id, player_key):
+        """Mark a player as ready (ships placed)."""
+        game_key = f"game:{game_id}"
+        ready_key = f"{player_key}_ready"
+        self.redis_client.hset(game_key, ready_key, "true")
+
+    def get_player_ready(self, game_id, player_key):
+        """Check if a player is ready."""
+        game_key = f"game:{game_id}"
+        ready_key = f"{player_key}_ready"
+        return self.redis_client.hget(game_key, ready_key) == "true"
+
+    def are_both_players_ready(self, game_id):
+        """Check if both players are ready to play."""
+        return (
+            self.get_player_ready(game_id, "player_1") and
+            self.get_player_ready(game_id, "player_2")
+        )

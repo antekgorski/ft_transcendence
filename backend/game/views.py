@@ -1001,6 +1001,9 @@ class GameViewSet(viewsets.ModelViewSet):
         
         self.redis_manager.set_ships(id, player_key, ship_data)
         
+        # Mark player as ready
+        self.redis_manager.set_player_ready(id, player_key)
+        
         # For AI games: start game when player_1 finishes ship placement
         if game_meta.get('game_type') == 'ai' and game_meta.get('status') == 'pending' and player_key == 'player_1':
             # Ensure AI ships exist before activating the game

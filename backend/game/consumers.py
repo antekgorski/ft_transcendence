@@ -296,6 +296,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.send_error('Game not found')
             return
 
+        # VALIDATION: Both players must be ready (ships placed)
+        if not self.redis_manager.are_both_players_ready(self.game_id):
+            await self.send_error('Both players must place ships before shooting')
+            return
+
         player_id = str(self.user.id)
         player_key = 'player_1' if player_id == game_meta['player_1_id'] else 'player_2'
         opponent_key = 'player_2' if player_key == 'player_1' else 'player_1'
@@ -447,6 +452,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         
         message = data.get('message', '').strip()
         if not message:
+            return
+        
+        # VALIDATION: Both players must be ready (ships placed) for messages to be delivered
+        if not self.redis_manager.are_both_players_ready(self.game_id):
+            await self.send_error('Both players must place ships before starting chat')
             return
         
         # Sanitize: limit length
