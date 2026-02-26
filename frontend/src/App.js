@@ -8,6 +8,7 @@ import GameBoard from './pages/GameBoard';
 import RouterPage from './pages/RouterPage';
 import LeaderboardPage from './pages/Leaderboard';
 import { AuthProvider, AuthContext } from './contexts/AuthContext';
+import { GameProvider } from './contexts/GameContext';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
 
@@ -41,9 +42,11 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
+      <GameProvider>
+        <BrowserRouter>
+          <AppContent />
+        </BrowserRouter>
+      </GameProvider>
     </AuthProvider>
   );
 }

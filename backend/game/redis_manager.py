@@ -277,6 +277,22 @@ class GameStateManager:
         data = self.redis_client.lrange(chat_key, 0, -1)
         return [json.loads(msg) for msg in data] if data else []
 
+    def set_placement_timer_start(self, game_id, timestamp):
+        """Store the Unix timestamp when the PvP placement timer started."""
+        key = f"game:{game_id}:placement_timer_start"
+        self.redis_client.set(key, str(timestamp))
+        self.redis_client.expire(key, self.game_expiration)
+
+    def get_placement_timer_start(self, game_id):
+        """Return the Unix timestamp when the PvP placement timer started, or None."""
+        key = f"game:{game_id}:placement_timer_start"
+        val = self.redis_client.get(key)
+        return float(val) if val else None
+
+    def clear_placement_timer_start(self, game_id):
+        """Remove the placement timer start key."""
+        self.redis_client.delete(f"game:{game_id}:placement_timer_start")
+
     def _pvp_queue_key(self):
         return "pvp:queue"
 

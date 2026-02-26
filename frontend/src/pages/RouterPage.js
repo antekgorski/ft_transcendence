@@ -88,51 +88,52 @@ function Body() {
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center gap-8 min-h-[60vh]">
-      <h2 className="text-4xl font-bold text-white">Choose Your Destination</h2>
-      <div className="flex gap-6">
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-8">
+      <h2 className="px-4 text-center text-2xl font-bold text-white sm:text-4xl">Choose Your Destination</h2>
+      <div className="grid w-full max-w-6xl grid-cols-1 gap-4 px-4 sm:grid-cols-2 lg:grid-cols-4">
         <Link
           to="/game"
           state={{ startAI: true }}
-          className={`px-8 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg flex items-center justify-center ${isSearching ? 'opacity-50 pointer-events-none' : ''}`}
+          className={`flex w-full items-center justify-center rounded-lg bg-emerald-500 px-6 py-3 text-center text-base font-bold text-white shadow-lg transition-colors hover:bg-emerald-600 sm:py-4 sm:text-lg lg:text-xl ${isSearching ? 'pointer-events-none opacity-50' : ''}`}
         >
-          Play Game
+          Play Against AI
         </Link>
         <button
           onClick={handlePvpClick}
           disabled={isSearching}
-          className="px-8 py-4 bg-amber-500 hover:bg-amber-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg"
+          className="w-full rounded-lg bg-amber-500 px-6 py-3 text-center text-base font-bold text-white shadow-lg transition-colors hover:bg-amber-600 disabled:opacity-50 sm:py-4 sm:text-lg lg:text-xl"
         >
-          Graj PvP
+          Play Against Player
         </button>
         <Link
           to="/profile"
-          className={`px-8 py-4 bg-blue-500 hover:bg-blue-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg flex items-center justify-center ${isSearching ? 'opacity-50 pointer-events-none' : ''}`}
+          onClick={isSearching ? (e) => { e.preventDefault(); stopSearch().then(() => navigate('/profile')); } : undefined}
+          className="flex w-full items-center justify-center rounded-lg bg-blue-500 px-6 py-3 text-center text-base font-bold text-white shadow-lg transition-colors hover:bg-blue-600 sm:py-4 sm:text-lg lg:text-xl"
         >
           View Profile
         </Link>
         <Link
           to="/leaderboard"
-          className="px-8 py-4 bg-purple-500 hover:bg-purple-600 rounded-lg font-bold text-xl text-white transition-colors shadow-lg flex items-center justify-center"
+          className="flex w-full items-center justify-center rounded-lg bg-purple-500 px-6 py-3 text-center text-base font-bold text-white shadow-lg transition-colors hover:bg-purple-600 sm:py-4 sm:text-lg lg:text-xl"
         >
           View Leaderboard
         </Link>
 
       </div>
       {isSearching && (
-        <div className="bg-slate-900/60 border border-slate-700 rounded-lg px-6 py-4 text-center text-white">
-          <p className="text-lg font-semibold">Szukam przeciwnika...</p>
-          <p className="text-sm text-slate-300">Pozostalo: {secondsLeft}s</p>
+        <div className="mx-4 w-full max-w-md rounded-lg border border-slate-700 bg-slate-900/60 px-6 py-4 text-center text-white">
+          <p className="text-lg font-semibold">Looking for an Opponent...</p>
+          <p className="text-sm text-slate-300">Time Left: {secondsLeft}s</p>
           <button
             onClick={stopSearch}
             className="mt-3 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm font-semibold"
           >
-            Anuluj
+            Cancel Search
           </button>
         </div>
       )}
       {searchError && !isSearching && (
-        <div className="bg-red-500/20 border border-red-500/60 rounded-lg px-6 py-3 text-red-200">
+        <div className="mx-4 w-full max-w-md rounded-lg border border-red-500/60 bg-red-500/20 px-6 py-3 text-red-200">
           {searchError}
         </div>
       )}

@@ -20,12 +20,10 @@ This project has been created as part of the 42 curriculum by dmodrzej[, agorski
 
 # Description
 
-**3D Tactical Battleship** is the final project of the 42 Common Core.
-Our team has developed a high-end, web-based **3D Battleship** platform.
-Unlike traditional versions, our project features a real-time multiplayer
-engine, an AI strategic opponent, and a sleek, retro-futuristic UI.
-The application is built as a microservices-based Single Page Application
-(SPA) designed for performance, security, and scalability.
+**Online Tactical Battleship** is the final project of the 42 Common Core.
+Our team has developed a high-end, web-based **Online Battleship** platform.
+The project features a real-time multiplayer engine, an AI strategic opponent,
+and a sleek UI.
 
 ---
 
@@ -181,7 +179,6 @@ flowchart LR
 
 ### Frontend
 - **React**: Component-based SPA framework for dynamic UI
-- **Three.js**: 3D graphics library for immersive battleship board visualization
 - **Nginx**: Web server for serving static assets and reverse proxy
 
 ### Backend
@@ -296,52 +293,64 @@ erDiagram
 ### User Management
 - **User Registration & Login**: Secure account creation with password hashing, email validation, and session-based authentication
 - **OAuth 2.0 Authentication**: Single sign-on via 42 Intra for streamlined access
-- **User Profiles**: Customizable display names, avatar uploads, and language preferences
+- **User Profiles**: Customizable display names and avatar uploads
 - **Session Management**: Secure Redis-backed sessions with HttpOnly cookies
 
 ### Social Features
-- **Friendship System**: Send, accept, or block friend requests with real-time status updates
+- **Friendship System**: Send, accept, or reject friend requests with online status checking
 - **Notifications**: In-app alerts for friend requests, game invitations, and match results with customizable preferences
 
 ### Gameplay
-- **3D Battleship Game**: Full-featured battleship with Three.js-powered 3D board visualization
-- **Real-time Multiplayer**: WebSocket-based synchronous PvP gameplay with live board updates
+- **Battleship Game**: Full-featured battleships game with options to play against AI or another player
+- **Real-time Chat**: WebSocket-based option to chat during the game with AI or another player
 - **AI Opponent**: Strategic bot using probability-grid algorithms for challenging single-player experience
 - **Game History**: Persistent match records with detailed statistics (shots, hits, duration, winner)
 
 ### Statistics & Leaderboards
-- **Player Statistics**: Track games played, win/loss ratio, accuracy percentage, and win streaks
+- **Player Statistics**: Track games played, wins and losses, accuracy percentage, and win streaks
 - **Leaderboard System**: Global rankings based on wins, accuracy, and other performance metrics
 
 ---
 
 # Modules
 
-### Web (9 Points)
+## Basic
+
+### Web (7 Points)
 
 - **Major: Use a framework for both the frontend and backend.** Django & React (2 pts)
-- **Major: Implement real-time features using WebSockets or similar technology.** Real-time gaming experience (2 pts)
+- **Major: Implement real-time features using WebSockets or similar technology.** Real-time gaming experience and chat (2 pts)
 - **Major: Allow users to interact with other users.** Basic chat, checking other users' profiles, adding and removing friends (2 pts)
-- **Major: A public API to interact with the database with a secured API key, rate limiting, documentation, and at least 5 endpoints** API available for interacting with user database (2 pts)
 - **Minor: Use an ORM for the database.** Django ORM for database management (1 pt)
 
-### User Management (4 Points)
+### User Management (3 Points)
 
 - **Major: Standard user management and authentication.** Secure registration, login, and profile management (2 pts)
 - **Minor: Game statistics and match history.** Game stats and match history (1 pt)
+
+### Gaming and User Experience (4 Points)
+
+- **Major: Implement a complete web-based game where users can play against each other** Full Battleship implementation (2 pts)
+- **Major: Remote players — Enable two players on separate computers to play the same game in real-time** Real-time multiplayer via WebSockets (2 pts)
+
+**Total: 14 Points**
+
+## Bonus
+
+### User Management (1 Point)
+
 - **Minor: Implement remote authentication with OAuth 2.0** OAuth integration with 42 Intra (1 pt)
 
 ### Artificial Intelligence (2 Points)
 
 - **Major: Introduce an AI Opponent for games** A strategic bot utilizing a probability-grid algorithm for ship hunting (2 pts)
 
-### Gaming and User Experience (6 Points)
+### Modules of Choice (2 Points)
 
-- **Major: Implement a complete web-based game where users can play against each other** Full 3D Battleship implementation (2 pts)
-- **Major: Remote players — Enable two players on separate computers to play the same game in real-time** Real-time multiplayer via WebSockets (2 pts)
-- **Major: Implement advanced 3D graphics using a library like Three.js or Babylon.js.** Three.js integration for immersive board experience (2 pts)
+- **Minor: Accessibility of the game via friendly URL** Game available on https://statki.bieda.it (1 pt)
+- **Minor: Deployment pipeline to a remote VPS server** Deployment to a server on mikr.us via Docker Hub with a deployment script (1 pt)
 
-**Total: 21 Points** (exceeding the 14-point requirement).
+**Total: 19 Points** (14 points for basic implementation + 5 points for bonus)
 
 ---
 

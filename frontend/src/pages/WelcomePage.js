@@ -67,10 +67,10 @@ function WelcomePage() {
         {/* Header */}
         <div className="text-center">
           <h1 className="text-5xl font-bold text-white tracking-wide drop-shadow-lg">
-            ⚓ BATTLESHIP
+            ⚓ BATTLESHIPS
           </h1>
           <p className="text-lg text-emerald-400 mt-2 tracking-wide">
-            3D Tactical Multiplayer Game
+            Tactical Online Game
           </p>
         </div>
 

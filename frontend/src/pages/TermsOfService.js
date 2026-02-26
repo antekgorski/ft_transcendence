@@ -9,10 +9,10 @@ function TermsOfService() {
         {/* Header */}
         <div className="text-center">
           <h1 className="text-5xl font-bold text-white tracking-wide drop-shadow-lg">
-            ⚓ BATTLESHIP
+            ⚓ BATTLESHIPS
           </h1>
           <p className="text-lg text-emerald-400 mt-2 tracking-wide">
-            3D Tactical Multiplayer Game
+            Tactical Online Game
           </p>
         </div>
 
@@ -30,7 +30,7 @@ function TermsOfService() {
             <section>
               <h3 className="text-xl font-bold text-slate-800 mb-3">General Information</h3>
               <p className="mb-2">
-                This application ("3D Tactical Battleship") is an educational project developed as part of the 42 School curriculum.
+                This application ("Battleships - Tactical Online Game") is an educational project developed as part of the 42 School curriculum.
                 The application provides a web-based Battleship game featuring real-time multiplayer gameplay, an AI opponent, and user interaction features.
               </p>
               <p>

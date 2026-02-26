@@ -1,3 +1,4 @@
+import time
 import uuid
 from datetime import datetime, timezone as dt_timezone
 from django.utils import timezone
@@ -6,6 +7,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 from .models import Game, PlayerStats
 from .serializers import (
@@ -326,6 +329,8 @@ class GameViewSet(viewsets.ModelViewSet):
             'id': game_meta.get('game_id'),
             'player_1': game_meta.get('player_1_id'),
             'player_2': game_meta.get('player_2_id') or None,
+            'player_1_username': game_meta.get('player_1_username', ''),
+            'player_2_username': game_meta.get('player_2_username', ''),
             'game_type': game_meta.get('game_type'),
             'status': game_meta.get('status'),
             'created_at': game_meta.get('created_at'),
@@ -373,10 +378,21 @@ class GameViewSet(viewsets.ModelViewSet):
         active_game_id = self.redis_manager.get_active_game(user.id)
         
         if active_game_id:
-            return Response(
-                {'error': 'User is already in a game'},
-                status=status.HTTP_409_CONFLICT
-            )
+            game_meta = self.redis_manager.get_game_meta(active_game_id)
+            game_type_req = request.data.get('game_type', 'ai')
+            # Auto-clear a stale pending PvP game when the user wants to start AI
+            if game_meta and game_meta.get('game_type') == 'pvp' and game_meta.get('status') == 'pending' and game_type_req == 'ai':
+                logger.info('Auto-clearing stale pending PvP game %s for user %s before AI game creation', active_game_id, user.id)
+                self.redis_manager.delete_game(active_game_id)
+                self.redis_manager.remove_active_game(user.id)
+                p2_id = game_meta.get('player_2_id')
+                if p2_id:
+                    self.redis_manager.remove_active_game(p2_id)
+            else:
+                return Response(
+                    {'error': 'User is already in a game'},
+                    status=status.HTTP_409_CONFLICT
+                )
         
         serializer = GameCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -452,10 +468,19 @@ class GameViewSet(viewsets.ModelViewSet):
 
         active_game_id = self.redis_manager.get_active_game(user.id)
         if active_game_id:
-            return Response({
-                'status': 'active',
-                'game_id': active_game_id,
-            })
+            game_meta = self.redis_manager.get_game_meta(active_game_id)
+            if game_meta and game_meta.get('game_type') == 'ai':
+                # Auto-cleanup stale AI game so PvP matchmaking can proceed
+                # Record the AI game as forfeited in DB before cleaning up Redis
+                logger.info('Auto-cleaning stale AI game %s for user %s before PvP matchmake', active_game_id, user.id)
+                self._record_ai_forfeit(active_game_id, user, game_meta)
+                self.redis_manager.delete_game(active_game_id)
+                self.redis_manager.remove_active_game(user.id)
+            else:
+                return Response({
+                    'status': 'active',
+                    'game_id': active_game_id,
+                })
 
         opponent_id = self.redis_manager.pop_pvp_opponent(user.id)
         if opponent_id:
@@ -475,8 +500,7 @@ class GameViewSet(viewsets.ModelViewSet):
                     player_1_username=user.username,
                     player_2_username=opponent.username,
                 )
-                self.redis_manager.set_game_status(game_id, 'active')
-                self.redis_manager.set_current_turn(game_id, str(user.id))
+                # Game starts as 'pending' — becomes 'active' when both players place ships
                 self.redis_manager.set_active_game(user.id, game_id)
                 self.redis_manager.set_active_game(opponent.id, game_id)
                 self.redis_manager.remove_from_pvp_queue(opponent.id)
@@ -800,6 +824,42 @@ class GameViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
+    def cancel(self, request, id=None):
+        """Cancel a pending PvP game (called when either player leaves during ship placement)."""
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
+            return Response({'error': 'Game not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
+
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
+            return Response({'error': 'User not in this game'}, status=status.HTTP_403_FORBIDDEN)
+
+        if game_meta.get('status') != 'pending':
+            return Response({'error': 'Only pending games can be cancelled'}, status=status.HTTP_409_CONFLICT)
+
+        # Remove from Redis
+        self.redis_manager.delete_game(id)
+        self.redis_manager.remove_active_game(player_1_id)
+        if player_2_id:
+            self.redis_manager.remove_active_game(player_2_id)
+        self.redis_manager.clear_placement_timer_start(id)
+
+        # Notify both players so the other side can redirect to menu
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"game_{id}",
+                {'type': 'game_cancelled', 'reason': 'player_left'}
+            )
+        except Exception:
+            pass
+
+        return Response({'status': 'cancelled'})
+
+    @action(detail=True, methods=['post'])
     def end_game(self, request, id=None):
         """End a game and save the results.
         
@@ -1026,6 +1086,51 @@ class GameViewSet(viewsets.ModelViewSet):
             # Update Redis game status
             self.redis_manager.set_game_status(id, 'active')
             self.redis_manager.set_current_turn(id, game_meta.get('player_1_id'))
+        
+        # For PvP games: activate when BOTH players have placed ships
+        elif game_meta.get('game_type') == 'pvp' and game_meta.get('status') == 'pending':
+            other_key = 'player_2' if player_key == 'player_1' else 'player_1'
+            other_ships = self.redis_manager.get_ships(id, other_key)
+            if other_ships and other_ships.get('positions'):
+                # Both players ready — activate game, player_1 goes first
+                first_player_id = game_meta.get('player_1_id')
+                self.redis_manager.set_game_status(id, 'active')
+                self.redis_manager.set_current_turn(id, first_player_id)
+                self.redis_manager.clear_placement_timer_start(id)
+                # Broadcast game_start to both players via WebSocket
+                try:
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f"game_{id}",
+                        {'type': 'game_start', 'starting_player_id': first_player_id}
+                    )
+                except Exception as e:
+                    logger.warning('Failed to send game_start WS event for game %s: %s', id, e)
+                return Response({'status': 'ships_placed', 'game_started': True, 'starting_player_id': first_player_id})
+            else:
+                # First player to place — start the 60-second placement timer
+                existing_timer = self.redis_manager.get_placement_timer_start(id)
+                if not existing_timer:
+                    self.redis_manager.set_placement_timer_start(id, time.time())
+                    other_player_id = game_meta.get(f'{other_key}_id')
+                    try:
+                        channel_layer = get_channel_layer()
+                        async_to_sync(channel_layer.group_send)(
+                            f"game_{id}",
+                            {
+                                'type': 'placement_timer_start',
+                                'seconds': 60,
+                                'waiting_for_player_id': other_player_id,
+                                'placed_by_player_id': str(user.id),
+                            }
+                        )
+                    except Exception:
+                        pass
+                    return Response({'status': 'ships_placed', 'timer_seconds': 60})
+                else:
+                    elapsed = time.time() - existing_timer
+                    remaining = max(0, int(60 - elapsed))
+                    return Response({'status': 'ships_placed', 'timer_seconds': remaining})
             
         return Response({'status': 'ships_placed'})
     
@@ -1058,12 +1163,20 @@ class GameViewSet(viewsets.ModelViewSet):
         player_1_ready = player_1_ships is not None
         player_2_ready = player_2_ships is not None or game_type == 'ai'
         
+        # Include remaining placement timer so the waiting player can show a countdown
+        timer_start = self.redis_manager.get_placement_timer_start(id)
+        placement_timer_remaining = None
+        if timer_start is not None:
+            elapsed = time.time() - timer_start
+            placement_timer_remaining = max(0, int(60 - elapsed))
+
         return Response({
             'player_1_ready': player_1_ready,
             'player_2_ready': player_2_ready,
             'both_ready': player_1_ready and player_2_ready,
             'player_1_ships': player_1_ships,
-            'player_2_ships': player_2_ships if game_type != 'ai' else None  # Don't expose AI ships
+            'player_2_ships': player_2_ships if game_type != 'ai' else None,  # Don't expose AI ships
+            'placement_timer_remaining': placement_timer_remaining,
         })
 
     @action(detail=True, methods=['get'])
@@ -1243,4 +1356,88 @@ class GameViewSet(viewsets.ModelViewSet):
                 player_1_stats.accuracy_percentage = (player_1_stats.total_hits / player_1_stats.total_shots) * 100
             
             player_1_stats.save()
+    
+    def _record_ai_forfeit(self, game_id, user, game_meta):
+        """Record an AI game as forfeited in the DB before Redis cleanup.
+        
+        Called when the player starts PvP matchmaking while an AI game is active.
+        The player forfeits the AI game (AI wins).
+        """
+        from game.models import Game, PlayerStats
+        
+        # Don't double-record
+        if Game.objects.filter(id=game_id).exists():
+            return
+        
+        player_1_id = game_meta.get('player_1_id')
+        created_at_str = game_meta.get('created_at')
+        
+        # Get shot stats from Redis before deletion
+        shots_p1 = self.redis_manager.get_shots(game_id, 'player_1')
+        shots_p2 = self.redis_manager.get_shots(game_id, 'player_2')
+        
+        def summarize(shots):
+            total = len(shots)
+            hits = sum(1 for shot in shots if shot.get('result') == 'hit')
+            return total, hits
+        
+        p1_shots, p1_hits = summarize(shots_p1)
+        p2_shots, p2_hits = summarize(shots_p2)
+        
+        started_at_dt = timezone.now()
+        if created_at_str:
+            try:
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                started_at_dt = start_time
+            except (ValueError, TypeError):
+                pass
+        
+        try:
+            game = Game.objects.create(
+                id=game_id,
+                player_1=user,
+                player_2=None,
+                game_type='ai',
+                status='forfeited',
+                winner=None,  # AI wins but AI has no user record
+                started_at=started_at_dt,
+                ended_at=timezone.now(),
+                player_1_shots=p1_shots,
+                player_1_hits=p1_hits,
+                player_2_shots=p2_shots,
+                player_2_hits=p2_hits,
+            )
             
+            # Calculate duration
+            if created_at_str:
+                try:
+                    start_time = datetime.fromisoformat(created_at_str)
+                    if start_time.tzinfo is None:
+                        start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                    ended_at = game.ended_at
+                    if ended_at.tzinfo is None:
+                        ended_at = ended_at.replace(tzinfo=dt_timezone.utc)
+                    game.duration_seconds = int((ended_at - start_time).total_seconds())
+                    game.save()
+                except (ValueError, TypeError):
+                    pass
+            
+            # Update player stats - count as a loss for the player
+            try:
+                stats = PlayerStats.objects.get(user_id=user.id)
+            except PlayerStats.DoesNotExist:
+                stats = PlayerStats.objects.create(user_id=user.id)
+            
+            stats.games_played += 1
+            stats.games_lost += 1
+            stats.current_win_streak = 0
+            stats.total_shots += p1_shots
+            stats.total_hits += p1_hits
+            if stats.total_shots > 0:
+                stats.accuracy_percentage = (stats.total_hits / stats.total_shots) * 100
+            stats.save()
+            
+        except Exception as e:
+            logger.warning('Failed to record AI forfeit for game %s: %s', game_id, e)

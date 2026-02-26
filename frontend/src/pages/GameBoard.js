@@ -5,8 +5,8 @@ import axios from 'axios';
 import { Template } from './Components';
 import API_BASE_URL from '../config';
 import { AuthContext } from '../contexts/AuthContext';
+import { GameContext } from '../contexts/GameContext';
 import { gameSocket } from '../utils/socket';
-import { ReturnToMenuButton } from './Components';
 
 
 // Deklarujemy stałą z rozmiarem planszy (10x10).
@@ -41,6 +41,7 @@ function Body() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useContext(AuthContext);
+  const { setActiveGame, clearActiveGame, setOnForfeitAndLeave } = useContext(GameContext);
 
   // Ref to prevent concurrent initialization
   const initializingRef = useRef(false);
@@ -85,12 +86,41 @@ function Body() {
   // Stan dla czatu w grze
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
-  const chatEndRef = useRef(null);
+  const chatScrollRef = useRef(null); // ref to messages container (for in-box scroll)
+  const chatEndRef = useRef(null);    // sentinel div inside the box
+  const [chatToast, setChatToast] = useState(null); // { message, senderUsername }
+  const chatToastTimerRef = useRef(null);
+
+  // Game mode and opponent info (for dynamic labels)
+  const [gameMode, setGameMode] = useState('ai'); // 'ai' or 'pvp'
+  const [opponentName, setOpponentName] = useState('AI');
+
+  // PvP pending: ships placed but waiting for opponent to place theirs
+  const [isPvpWaiting, setIsPvpWaiting] = useState(false);
+  const isPvpWaitingRef = useRef(false); // mirror readable inside stale WS closures
+  isPvpWaitingRef.current = isPvpWaiting;
+
+  // PvP placement countdown (seconds remaining for the other player to place ships)
+  const [pvpPlacementSecondsLeft, setPvpPlacementSecondsLeft] = useState(null);
+  const pvpPlacementTimerRef = useRef(null);
+
+  // Opponent-disconnected notification with 60s reconnect countdown
+  const [opponentDisconnectedNotice, setOpponentDisconnectedNotice] = useState(false);
+  const [opponentReconnectCountdown, setOpponentReconnectCountdown] = useState(null);
+  const disconnectTimerRef = useRef(null);
+
+  // Navigation confirmation (leaving = forfeit during active game)
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [pendingLeaveAction, setPendingLeaveAction] = useState(null); // 'menu' or 'logout'
 
   // Stan dla WebSocket i gameplay
   const [isMyTurn, setIsMyTurn] = useState(false);
+  const isMyTurnRef = useRef(false); // mirror of isMyTurn, readable inside stale WS closures
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const socketRef = useRef(null);
+
+  // Keep isMyTurnRef in sync so WS handlers can read the current value
+  isMyTurnRef.current = isMyTurn;
 
   // Lista dostępnych statków (długości) do rozmieszczenia.
   const allShips = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
@@ -159,7 +189,7 @@ function Body() {
   };
 
   // Restore game boards and shot history from shots array
-  const restoreGameStateFromShots = (existingPlayerBoard, playerShots, opponentShots, playerInactiveAll = [], opponentInactiveAll = []) => {
+  const restoreGameStateFromShots = (existingPlayerBoard, playerShots, opponentShots, playerInactiveAll = [], opponentInactiveAll = [], opponentLabel = 'AI') => {
     // Start with the existing player board (which has ships)
     const newPlayerBoard = existingPlayerBoard.map((r) => r.slice());
     const newEnemyBoard = createEmptyBoard();
@@ -169,7 +199,7 @@ function Body() {
     const allShots = [];
     if (opponentShots && Array.isArray(opponentShots)) {
       opponentShots.forEach(shot => {
-        allShots.push({ ...shot, player: 'AI' });
+        allShots.push({ ...shot, player: opponentLabel });
       });
     }
     if (playerShots && Array.isArray(playerShots)) {
@@ -190,7 +220,7 @@ function Body() {
       const { row, col, result, inactive, player } = shot;
 
       if (typeof row === 'number' && typeof col === 'number') {
-        if (player === 'AI') {
+        if (player !== 'You') {
           // Opponent shots go on player board
           if (newPlayerBoard[row][col] === CELL_TYPES.EMPTY) {
             newPlayerBoard[row][col] = result === 'hit' ? CELL_TYPES.HIT : CELL_TYPES.MISS;
@@ -287,9 +317,22 @@ function Body() {
           );
 
           if (activeGameResponse.data && activeGameResponse.data.id) {
-            currentGameId = activeGameResponse.data.id;
             const activeGame = activeGameResponse.data;
+            const mode = activeGame.game_type || 'ai';
+
+            // Issue 2 fix: when explicitly starting AI, skip any stale PvP active game
+            if (location.state?.startAI && mode === 'pvp') {
+              // Fall through to AI game creation below
+              // The backend create endpoint also auto-clears pending PvP games
+            } else {
+            currentGameId = activeGameResponse.data.id;
             const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
+
+            // Set game mode & opponent name from active game metadata
+            setGameMode(mode);
+            const oppUsername = isP1 ? activeGame.player_2_username : activeGame.player_1_username;
+            setOpponentName(mode === 'ai' ? 'AI' : (oppUsername || 'Opponent'));
+
             setGameId(currentGameId);
             setGameInitialized(true);
 
@@ -301,6 +344,8 @@ function Body() {
 
               const myShipsReady = isP1 ? shipsStatusResponse.data.player_1_ready : shipsStatusResponse.data.player_2_ready;
               const myShipsData = isP1 ? shipsStatusResponse.data.player_1_ships : shipsStatusResponse.data.player_2_ships;
+              const opponentKey = isP1 ? 'player_2_ready' : 'player_1_ready';
+              const opponentShipsReady = shipsStatusResponse.data[opponentKey];
 
               if (myShipsReady && myShipsData) {
                 const shipData = myShipsData;
@@ -311,52 +356,79 @@ function Body() {
                 setIsMyTurn(false);
                 setIsWaitingForResponse(false);
 
-                // Fetch shots to restore game progress
-                try {
-                  const shotsResponse = await axios.get(
-                    `${API_BASE_URL}/games/${currentGameId}/shots/`,
-                    { withCredentials: true }
-                  );
-                  const { player_1_shots, player_2_shots, player_1_inactive, player_2_inactive, current_turn, chat_messages } = shotsResponse.data;
-
-                  const myShots = isP1 ? player_1_shots : player_2_shots;
-                  const enemyShots = isP1 ? player_2_shots : player_1_shots;
-                  const myInactive = isP1 ? player_1_inactive : player_2_inactive;
-                  const enemyInactive = isP1 ? player_2_inactive : player_1_inactive;
-
-                  const restored = restoreGameStateFromShots(board, myShots, enemyShots, myInactive, enemyInactive);
-                  setPlayerBoard(restored.playerBoard);
-                  setEnemyBoard(restored.enemyBoard);
-                  setShotHistory(restored.shotHistory);
-
-                  if (chat_messages) {
-                    const loadedMessages = chat_messages.map(msg => ({
-                      senderId: msg.sender_id,
-                      senderUsername: msg.sender_username,
-                      message: msg.message,
-                      timestamp: msg.timestamp,
-                      isMe: msg.sender_id === user.id?.toString(),
-                    }));
-                    setChatMessages(loadedMessages);
-                  }
-
-                  // Set whose turn it is
-                  if (current_turn) {
-                    setIsMyTurn(current_turn === user.id.toString());
-                    setStatusMessage(current_turn === user.id.toString() ? 'Your turn - shoot on enemy board.' : 'Waiting for opponent...');
-                  }
-                } catch (shotsErr) {
-                  // If we can't fetch shots, just use the ship board
-                  console.error('Failed to restore shots:', shotsErr);
+                // For PvP: if opponent hasn't placed ships yet, enter waiting state
+                if (mode === 'pvp' && !opponentShipsReady) {
                   setPlayerBoard(board);
+                  setIsPvpWaiting(true);
+                  setStatusMessage('Waiting for opponent to place their ships...');
+                  localStorage.removeItem(`game_${currentGameId}_ships`);
+                  gameSocket.connect(currentGameId);
+                } else {
+                  setStatusMessage('Ships already placed. Waiting for opponent...');
+
+                  // Fetch shots to restore game progress
+                  try {
+                    const shotsResponse = await axios.get(
+                      `${API_BASE_URL}/games/${currentGameId}/shots/`,
+                      { withCredentials: true }
+                    );
+                    const { player_1_shots, player_2_shots, player_1_inactive, player_2_inactive, current_turn, chat_messages } = shotsResponse.data;
+
+                    const myShots = isP1 ? player_1_shots : player_2_shots;
+                    const enemyShots = isP1 ? player_2_shots : player_1_shots;
+                    const myInactive = isP1 ? player_1_inactive : player_2_inactive;
+                    const enemyInactive = isP1 ? player_2_inactive : player_1_inactive;
+
+                    const oppLabel = mode === 'ai' ? 'AI' : (oppUsername || 'Opponent');
+                    const restored = restoreGameStateFromShots(board, myShots, enemyShots, myInactive, enemyInactive, oppLabel);
+                    setPlayerBoard(restored.playerBoard);
+                    setEnemyBoard(restored.enemyBoard);
+                    setShotHistory(restored.shotHistory);
+
+                    if (chat_messages) {
+                      const loadedMessages = chat_messages.map(msg => ({
+                        senderId: msg.sender_id,
+                        senderUsername: msg.sender_username,
+                        message: msg.message,
+                        timestamp: msg.timestamp,
+                        isMe: msg.sender_id === user.id?.toString(),
+                      }));
+                      setChatMessages(loadedMessages);
+                    }
+
+                    // Set whose turn it is
+                    if (current_turn) {
+                      setIsMyTurn(current_turn === user.id.toString());
+                      setStatusMessage(current_turn === user.id.toString() ? 'Your turn - shoot on enemy board.' : `Waiting for ${oppLabel}'s move...`);
+                    }
+                  } catch (shotsErr) {
+                    console.error('Failed to restore shots:', shotsErr);
+                    setPlayerBoard(board);
+                  }
+
+                  localStorage.removeItem(`game_${currentGameId}_ships`);
+                  gameSocket.connect(currentGameId);
+                }
+              } else {
+                // I haven't placed ships yet
+                const timerRemaining = shipsStatusResponse.data.placement_timer_remaining;
+                if (mode === 'pvp' && opponentShipsReady && timerRemaining != null && timerRemaining > 0) {
+                  // Opponent already placed — start the visible countdown from REST data (no WS needed yet)
+                  if (pvpPlacementTimerRef.current) clearInterval(pvpPlacementTimerRef.current);
+                  let secs = timerRemaining;
+                  setPvpPlacementSecondsLeft(secs);
+                  pvpPlacementTimerRef.current = setInterval(() => {
+                    secs -= 1;
+                    if (secs <= 0) {
+                      clearInterval(pvpPlacementTimerRef.current);
+                      pvpPlacementTimerRef.current = null;
+                      setPvpPlacementSecondsLeft(0);
+                    } else {
+                      setPvpPlacementSecondsLeft(secs);
+                    }
+                  }, 1000);
                 }
 
-                setStatusMessage('Ships already placed. Waiting for opponent...');
-                localStorage.removeItem(`game_${currentGameId}_ships`);
-
-                // Connect to WebSocket when loading existing in-progress game
-                gameSocket.connect(currentGameId);
-              } else {
                 const savedState = localStorage.getItem(`game_${currentGameId}_ships`);
                 if (savedState) {
                   try {
@@ -385,6 +457,7 @@ function Body() {
             setError(null);
             setGameLoading(false);
             return;
+            } // end of else (not skipping PvP)
           }
         } catch (activeErr) {
           if (activeErr.response?.status !== 404) {
@@ -423,6 +496,12 @@ function Body() {
               const activeGame = activeGameResponse.data;
               const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
 
+              // Set game mode & opponent name from active game metadata
+              const mode = activeGame.game_type || 'ai';
+              setGameMode(mode);
+              const oppUsername = isP1 ? activeGame.player_2_username : activeGame.player_1_username;
+              setOpponentName(mode === 'ai' ? 'AI' : (oppUsername || 'Opponent'));
+
               setGameId(existingGameId);
               setGameInitialized(true);
 
@@ -434,6 +513,7 @@ function Body() {
 
                 const myShipsReady = isP1 ? shipsStatusResponse.data.player_1_ready : shipsStatusResponse.data.player_2_ready;
                 const myShipsData = isP1 ? shipsStatusResponse.data.player_1_ships : shipsStatusResponse.data.player_2_ships;
+                const opponentShipsReady = isP1 ? shipsStatusResponse.data.player_2_ready : shipsStatusResponse.data.player_1_ready;
 
                 if (myShipsReady && myShipsData) {
                   const shipData = myShipsData;
@@ -443,6 +523,16 @@ function Body() {
                   setIsPlacingShips(false);
                   setIsMyTurn(false);
                   setIsWaitingForResponse(false);
+
+                  // PvP pending: I placed ships but opponent hasn't yet → waiting state
+                  if (mode === 'pvp' && !opponentShipsReady) {
+                    setPlayerBoard(board);
+                    setIsPvpWaiting(true);
+                    setStatusMessage('Waiting for opponent to place their ships...');
+                    localStorage.removeItem(`game_${existingGameId}_ships`);
+                    gameSocket.connect(existingGameId);
+                  } else {
+                  setStatusMessage('Ships already placed. Waiting for opponent...');
 
                   // Fetch shots to restore game progress
                   try {
@@ -457,7 +547,8 @@ function Body() {
                     const myInactive = isP1 ? player_1_inactive : player_2_inactive;
                     const enemyInactive = isP1 ? player_2_inactive : player_1_inactive;
 
-                    const restored = restoreGameStateFromShots(board, myShots, enemyShots, myInactive, enemyInactive);
+                    const oppLabel2 = mode === 'ai' ? 'AI' : (oppUsername || 'Opponent');
+                    const restored = restoreGameStateFromShots(board, myShots, enemyShots, myInactive, enemyInactive, oppLabel2);
                     setPlayerBoard(restored.playerBoard);
                     setEnemyBoard(restored.enemyBoard);
                     setShotHistory(restored.shotHistory);
@@ -476,7 +567,7 @@ function Body() {
                     // Set whose turn it is
                     if (current_turn) {
                       setIsMyTurn(current_turn === user.id.toString());
-                      setStatusMessage(current_turn === user.id.toString() ? 'Your turn - shoot on enemy board.' : 'Waiting for opponent...');
+                      setStatusMessage(current_turn === user.id.toString() ? 'Your turn - shoot on enemy board.' : `Waiting for ${oppLabel2}'s move...`);
                     }
                   } catch (shotsErr) {
                     // If we can't fetch shots, just use the ship board
@@ -484,12 +575,31 @@ function Body() {
                     setPlayerBoard(board);
                   }
 
-                  setStatusMessage('Ships already placed. Waiting for opponent...');
                   localStorage.removeItem(`game_${existingGameId}_ships`);
 
                   // Connect to WebSocket when loading existing in-progress game
                   gameSocket.connect(existingGameId);
+                  } // end else (not pvpWaiting)
                 } else {
+                  // I haven't placed ships yet
+                  const timerRemaining = shipsStatusResponse.data.placement_timer_remaining;
+                  if (mode === 'pvp' && opponentShipsReady && timerRemaining != null && timerRemaining > 0) {
+                    // Opponent already placed — start the visible countdown from REST data (no WS needed yet)
+                    if (pvpPlacementTimerRef.current) clearInterval(pvpPlacementTimerRef.current);
+                    let secs = timerRemaining;
+                    setPvpPlacementSecondsLeft(secs);
+                    pvpPlacementTimerRef.current = setInterval(() => {
+                      secs -= 1;
+                      if (secs <= 0) {
+                        clearInterval(pvpPlacementTimerRef.current);
+                        pvpPlacementTimerRef.current = null;
+                        setPvpPlacementSecondsLeft(0);
+                      } else {
+                        setPvpPlacementSecondsLeft(secs);
+                      }
+                    }, 1000);
+                  }
+
                   const savedState = localStorage.getItem(`game_${existingGameId}_ships`);
                   if (savedState) {
                     try {
@@ -635,7 +745,7 @@ function Body() {
             if (sunk && sunkShip?.length) {
               setStatusMessage('🚢 Ship sunk! Shoot again.');
             } else {
-              setStatusMessage(result === 'hit' ? '🎯 Hit! Shoot again.' : '💧 Miss! AI is shooting...');
+              setStatusMessage(result === 'hit' ? '🎯 Hit! Shoot again.' : `💧 Miss! ${opponentName} is shooting...`);
             }
 
             // If hit, we keep turn
@@ -646,7 +756,7 @@ function Body() {
 
             // Add to shot history
             setShotHistory(prev => [...prev, {
-              player: 'AI',
+              player: opponentName,
               row,
               col,
               result: hitResult,
@@ -668,9 +778,9 @@ function Body() {
             });
 
             if (sunk && sunkShip?.length) {
-              setStatusMessage(`AI sunk a ship at ${row + 1}, ${col + 1}. They shoot again...`);
+              setStatusMessage(`${opponentName} sunk a ship at ${row + 1}, ${col + 1}. They shoot again...`);
             } else {
-              setStatusMessage(`AI shot at ${row + 1}, ${col + 1}. ${hitResult === 'hit' ? '🎯 They hit! They shoot again...' : '💧 They missed!'}`);
+              setStatusMessage(`${opponentName} shot at ${row + 1}, ${col + 1}. ${hitResult === 'hit' ? '🎯 They hit! They shoot again...' : '💧 They missed!'}`);
             }
 
             // If AI missed, it's our turn
@@ -681,10 +791,16 @@ function Body() {
 
       // Handle game ended
       gameSocket.on('game_ended', (data) => {
-        // Stop reconnection attempts - game is finished
         gameSocket.disconnect();
+        setOpponentDisconnectedNotice(false);
+        setOpponentReconnectCountdown(null);
+        if (disconnectTimerRef.current) { clearInterval(disconnectTimerRef.current); disconnectTimerRef.current = null; }
+        setIsPvpWaiting(false);
 
-        if (data.winner_id === user.id) {
+        if (data.reason === 'both_disconnected') {
+          setGameResult('lose');
+          setStatusMessage('Both players disconnected. Game cancelled.');
+        } else if (data.winner_id === user.id) {
           setGameResult('win');
           setStatusMessage('🎉 You won!');
         } else {
@@ -695,19 +811,35 @@ function Body() {
 
       // Handle game forfeit
       gameSocket.on('game_forfeit', (data) => {
+        setOpponentDisconnectedNotice(false);
+        setOpponentReconnectCountdown(null);
+        if (disconnectTimerRef.current) { clearInterval(disconnectTimerRef.current); disconnectTimerRef.current = null; }
+        setIsPvpWaiting(false);
         setGameResult(data.player_id === user.id ? 'lose' : 'win');
         setStatusMessage(data.player_id === user.id ? 'You forfeited.' : 'Opponent forfeited. You won!');
       });
 
-      // Handle connected
+      // Handle connected — just a WS handshake confirmation; game start is via game_start event
       gameSocket.on('connected', (data) => {
-        setIsMyTurn(true); // Player always goes first
-        setStatusMessage('Game started! Your turn - shoot on enemy board.');
+        // For AI games the connect() onConnect callback handles isMyTurn
+        // For PvP games, game_start event handles isMyTurn
       });
 
-      // Handle player joined
+      // Handle player joined — clear disconnect notice if opponent reconnected
       gameSocket.on('player_joined', (data) => {
-        // Player joined
+        if (data.player_id !== user.id?.toString()) {
+          if (disconnectTimerRef.current) { clearInterval(disconnectTimerRef.current); disconnectTimerRef.current = null; }
+          setOpponentDisconnectedNotice(false);
+          setOpponentReconnectCountdown(null);
+          // Restore the correct status message
+          if (isPvpWaitingRef.current) {
+            setStatusMessage('Waiting for opponent to place their ships...');
+          } else {
+            setStatusMessage(isMyTurnRef.current
+              ? 'Your turn - shoot on enemy board.'
+              : `Waiting for ${opponentName}'s move...`);
+          }
+        }
       });
 
       // Handle chat messages
@@ -720,6 +852,83 @@ function Body() {
           isMe: data.sender_id === user.id?.toString(),
         };
         setChatMessages(prev => [...prev, msg]);
+        // Show toast for opponent messages
+        if (data.sender_id !== user.id?.toString()) {
+          if (chatToastTimerRef.current) clearTimeout(chatToastTimerRef.current);
+          setChatToast({ message: data.message, senderUsername: data.sender_username });
+          chatToastTimerRef.current = setTimeout(() => {
+            setChatToast(null);
+            chatToastTimerRef.current = null;
+          }, 4000);
+        }
+      });
+
+      // Handle opponent disconnected — 60s grace period before forfeit
+      gameSocket.on('opponent_disconnected', (data) => {
+        if (data.disconnected_player_id !== user.id?.toString()) {
+          setOpponentDisconnectedNotice(true);
+          if (disconnectTimerRef.current) clearInterval(disconnectTimerRef.current);
+          let secs = data.reconnect_timeout_seconds ?? 60;
+          setOpponentReconnectCountdown(secs);
+          disconnectTimerRef.current = setInterval(() => {
+            secs -= 1;
+            if (secs <= 0) {
+              clearInterval(disconnectTimerRef.current);
+              disconnectTimerRef.current = null;
+              setOpponentReconnectCountdown(0);
+            } else {
+              setOpponentReconnectCountdown(secs);
+            }
+          }, 1000);
+          setStatusMessage(`${opponentName} disconnected. They have 60s to reconnect...`);
+        }
+      });
+
+      // Handle game_start: both players placed ships, game is now active
+      gameSocket.on('game_start', (data) => {
+        if (pvpPlacementTimerRef.current) { clearInterval(pvpPlacementTimerRef.current); pvpPlacementTimerRef.current = null; }
+        setPvpPlacementSecondsLeft(null);
+        setIsPvpWaiting(false);
+        const iAmFirst = data.starting_player_id === user.id?.toString();
+        setIsMyTurn(iAmFirst);
+        setStatusMessage(iAmFirst ? 'Game started! Your turn — shoot on enemy board.' : `Game started! Waiting for ${opponentName}'s move...`);
+      });
+
+      // Handle placement_timer_start: start a visible countdown for both players
+      // Guard: skip if timer already running (player 1 may have started it from REST response)
+      gameSocket.on('placement_timer_start', (data) => {
+        if (pvpPlacementTimerRef.current) return; // already counting down from REST response
+        let secs = data.seconds ?? 60;
+        setPvpPlacementSecondsLeft(secs);
+        pvpPlacementTimerRef.current = setInterval(() => {
+          secs -= 1;
+          if (secs <= 0) {
+            clearInterval(pvpPlacementTimerRef.current);
+            pvpPlacementTimerRef.current = null;
+            setPvpPlacementSecondsLeft(0);
+          } else {
+            setPvpPlacementSecondsLeft(secs);
+          }
+        }, 1000);
+      });
+
+      // Handle game_cancelled: placement timeout or player left
+      // This fires for Player 1 (isPvpWaiting=true, isPlacingShips=false)
+      gameSocket.on('game_cancelled', (data) => {
+        if (pvpPlacementTimerRef.current) { clearInterval(pvpPlacementTimerRef.current); pvpPlacementTimerRef.current = null; }
+        setPvpPlacementSecondsLeft(null);
+        setIsPvpWaiting(false);
+        gameSocket.disconnect();
+        let msg;
+        if (data.reason === 'placement_timeout') {
+          msg = `${opponentName} ran out of time to place their ships. Game cancelled. Returning to menu...`;
+        } else if (data.reason === 'player_left') {
+          msg = `${opponentName} left the game. Game cancelled. Returning to menu...`;
+        } else {
+          msg = 'Game cancelled. Returning to menu...';
+        }
+        setStatusMessage(msg);
+        setTimeout(() => navigate('/menu'), 3000);
       });
     };
 
@@ -734,15 +943,129 @@ function Body() {
       gameSocket.off('connected');
       gameSocket.off('player_joined');
       gameSocket.off('chat_message');
+      gameSocket.off('opponent_disconnected');
+      gameSocket.off('game_start');
+      gameSocket.off('placement_timer_start');
+      gameSocket.off('game_cancelled');
+      if (pvpPlacementTimerRef.current) { clearInterval(pvpPlacementTimerRef.current); pvpPlacementTimerRef.current = null; }
+      if (disconnectTimerRef.current) { clearInterval(disconnectTimerRef.current); disconnectTimerRef.current = null; }
+      if (chatToastTimerRef.current) { clearTimeout(chatToastTimerRef.current); chatToastTimerRef.current = null; }
     };
-  }, [isPlacingShips, gameId, user.id]);
+  }, [isPlacingShips, gameId, user.id, opponentName]);
 
-  // Auto-scroll chat to bottom when new messages arrive
+  // Early WS connection during PvP ship placement so player 2 (and player 1 before they finish)
+  // can receive placement_timer_start and game_cancelled events before ships are placed.
   useEffect(() => {
-    if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (!isPlacingShips || gameMode !== 'pvp' || !gameId) return;
+
+    gameSocket.connect(gameId);
+
+    gameSocket.on('placement_timer_start', (data) => {
+      if (pvpPlacementTimerRef.current) clearInterval(pvpPlacementTimerRef.current);
+      let secs = data.seconds ?? 60;
+      setPvpPlacementSecondsLeft(secs);
+      pvpPlacementTimerRef.current = setInterval(() => {
+        secs -= 1;
+        if (secs <= 0) {
+          clearInterval(pvpPlacementTimerRef.current);
+          pvpPlacementTimerRef.current = null;
+          setPvpPlacementSecondsLeft(0);
+        } else {
+          setPvpPlacementSecondsLeft(secs);
+        }
+      }, 1000);
+    });
+
+    gameSocket.on('game_cancelled', (data) => {
+      if (pvpPlacementTimerRef.current) { clearInterval(pvpPlacementTimerRef.current); pvpPlacementTimerRef.current = null; }
+      setPvpPlacementSecondsLeft(null);
+      gameSocket.disconnect();
+      // This fires for Player 2 who is still placing ships — determine reason
+      let msg;
+      if (data.reason === 'player_left') {
+        msg = 'Your opponent left the game. Game cancelled. Returning to menu...';
+      } else if (data.reason === 'placement_timeout') {
+        msg = "Time's up! You didn't finish placing ships in time. Game cancelled. Returning to menu...";
+      } else {
+        msg = 'Game cancelled. Returning to menu...';
+      }
+      setStatusMessage(msg);
+      setTimeout(() => navigate('/menu'), 3000);
+    });
+
+    return () => {
+      gameSocket.off('placement_timer_start');
+      gameSocket.off('game_cancelled');
+    };
+  }, [gameId, gameMode, isPlacingShips]);
+
+  // Scroll chat box to bottom when new messages arrive (no page scroll)
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
   }, [chatMessages]);
+
+  // Countdown hit 0 while player is still placing ships — they ran out of time.
+  // (Fallback for when game_cancelled WS event hasn't arrived yet.)
+  useEffect(() => {
+    if (pvpPlacementSecondsLeft === 0 && isPlacingShips) {
+      if (pvpPlacementTimerRef.current) { clearInterval(pvpPlacementTimerRef.current); pvpPlacementTimerRef.current = null; }
+      setStatusMessage("Time's up! You didn't finish placing ships in time. Returning to menu...");
+      setTimeout(() => navigate('/menu'), 3000);
+    }
+  }, [pvpPlacementSecondsLeft, isPlacingShips, navigate]);
+
+  // Countdown hit 0 while Player 1 is in waiting state — opponent ran out of time.
+  // (Fallback for when game_cancelled WS event hasn't arrived yet.)
+  useEffect(() => {
+    if (pvpPlacementSecondsLeft === 0 && isPvpWaiting) {
+      if (pvpPlacementTimerRef.current) { clearInterval(pvpPlacementTimerRef.current); pvpPlacementTimerRef.current = null; }
+      setPvpPlacementSecondsLeft(null);
+      setIsPvpWaiting(false);
+      setStatusMessage(`${opponentName} ran out of time to place their ships. Game cancelled. Returning to menu...`);
+      setTimeout(() => navigate('/menu'), 3000);
+    }
+  }, [pvpPlacementSecondsLeft, isPvpWaiting, opponentName, navigate]);
+
+  // beforeunload handler - warn when closing/refreshing tab during active game (not during pending/waiting)
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (!isPlacingShips && !isPvpWaiting && gameResult === null && gameId) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isPlacingShips, isPvpWaiting, gameResult, gameId]);
+
+  // Sync game active state to GameContext (used by LogoutButton)
+  useEffect(() => {
+    const isActive = !isPlacingShips && !isPvpWaiting && gameResult === null && gameId;
+    if (isActive) {
+      setActiveGame(gameId);
+      setOnForfeitAndLeave(() => async () => {
+        try {
+          gameSocket.sendForfeit();
+          await axios.post(
+            `${API_BASE_URL}/games/${gameId}/forfeit/`,
+            {},
+            { withCredentials: true }
+          );
+          localStorage.removeItem(`game_${gameId}_ships`);
+        } catch (err) {}
+        gameSocket.disconnect();
+      });
+    } else {
+      clearActiveGame();
+    }
+  }, [isPlacingShips, isPvpWaiting, gameResult, gameId, setActiveGame, clearActiveGame, setOnForfeitAndLeave]);
+
+  // Clear GameContext on unmount
+  useEffect(() => {
+    return () => clearActiveGame();
+  }, [clearActiveGame]);
 
   // Funkcja sprawdzająca, czy statek może zostać ustawiony w danym miejscu.
   const canPlaceShip = (board, row, col, size, dir) => {
@@ -1209,6 +1532,13 @@ function Body() {
 
   // Funkcja resetowania gry do nowej rozgrywki
   const resetGameForNewRound = () => {
+    // For PvP games, redirect to menu instead of auto-creating a new AI game
+    if (gameMode === 'pvp') {
+      gameSocket.reset();
+      navigate('/menu');
+      return;
+    }
+
     // Reset WebSocket state for new game (clears game ended flag)
     gameSocket.reset();
 
@@ -1226,6 +1556,9 @@ function Body() {
     setIsMyTurn(false);
     setIsWaitingForResponse(false);
     setShotHistory([]);
+    setChatMessages([]);
+    setGameMode('ai');
+    setOpponentName('AI');
     initializingRef.current = false;
     setGameLoading(true);
 
@@ -1463,7 +1796,7 @@ function Body() {
     try {
       const allShipPositions = placedShips.flatMap(ship => ship.positions);
 
-      await axios.post(
+      const response = await axios.post(
         `${API_BASE_URL}/games/${gameId}/ships/`,
         {
           ship_type: 'fleet',
@@ -1476,24 +1809,40 @@ function Body() {
 
       setIsPlacingShips(false);
 
-      // Connect to WebSocket for game communication
-      gameSocket.connect(
-        gameId,
-        () => {
-          setStatusMessage('Game started! Your turn - shoot on enemy board.');
-          setIsMyTurn(true);
-        },
-        (error) => {
-          setStatusMessage('Connection error: ' + error.message);
+      if (gameMode === 'pvp') {
+        if (response.data?.timer_seconds != null) {
+          // I placed first — opponent hasn't placed yet. Start countdown and enter waiting state.
+          if (pvpPlacementTimerRef.current) clearInterval(pvpPlacementTimerRef.current);
+          let secs = response.data.timer_seconds;
+          setPvpPlacementSecondsLeft(secs);
+          pvpPlacementTimerRef.current = setInterval(() => {
+            secs -= 1;
+            if (secs <= 0) {
+              clearInterval(pvpPlacementTimerRef.current);
+              pvpPlacementTimerRef.current = null;
+              setPvpPlacementSecondsLeft(0);
+            } else {
+              setPvpPlacementSecondsLeft(secs);
+            }
+          }, 1000);
+          setIsPvpWaiting(true);
+          setStatusMessage('Ships placed! Waiting for opponent to place their ships...');
+          gameSocket.connect(gameId);  // game_start comes via WS when opponent places
+        } else if (response.data?.game_started) {
+          // I placed last — game is now active. Apply state directly from REST (no WS race).
+          if (pvpPlacementTimerRef.current) { clearInterval(pvpPlacementTimerRef.current); pvpPlacementTimerRef.current = null; }
+          setPvpPlacementSecondsLeft(null);
+          setIsPvpWaiting(false);
+          const iAmFirst = response.data.starting_player_id === user.id?.toString();
+          setIsMyTurn(iAmFirst);
+          setStatusMessage(iAmFirst ? 'Game started! Your turn — shoot on enemy board.' : `Game started! Waiting for ${opponentName}'s move...`);
+          gameSocket.connect(gameId);  // connect for actual game play (shots, chat, etc.)
+        } else {
+          // Fallback: no extra info, just connect and let WS event handle it
+          gameSocket.connect(gameId);
         }
-      );
-    } catch (err) {
-      // 409 means ships were already placed - this can happen if the game continued from a previous session
-      if (err.response?.status === 409) {
-        localStorage.removeItem(`game_${gameId}_ships`);
-        setIsPlacingShips(false);
-
-        // Connect to WebSocket
+      } else {
+        // Connect to WebSocket for game communication
         gameSocket.connect(
           gameId,
           () => {
@@ -1504,7 +1853,21 @@ function Body() {
             setStatusMessage('Connection error: ' + error.message);
           }
         );
-        setStatusMessage('Game started! Your turn - shoot on enemy board.');
+      }
+    } catch (err) {
+      // 409 means ships were already placed - this can happen if the game continued from a previous session
+      if (err.response?.status === 409) {
+        localStorage.removeItem(`game_${gameId}_ships`);
+        setIsPlacingShips(false);
+        if (gameMode === 'pvp') {
+          setIsPvpWaiting(true);
+          setStatusMessage('Ships already placed! Waiting for opponent...');
+          gameSocket.connect(gameId);
+        } else {
+          setIsMyTurn(true);
+          setStatusMessage('Game started! Your turn - shoot on enemy board.');
+          gameSocket.connect(gameId);
+        }
       } else {
         setStatusMessage(err.response?.data?.error || 'Error placing ships. Please try again.');
       }
@@ -1561,18 +1924,47 @@ function Body() {
   return (
     // Główny kontener strony.
     <div className="space-y-6 w-full max-w-6xl mx-auto text-white">
+
+      {/* Chat toast — incoming opponent message, fixed top-right */}
+      {chatToast && (
+        <div className="fixed top-4 right-4 z-50 max-w-xs bg-slate-800 border border-indigo-500 rounded-lg shadow-lg px-4 py-3 text-white">
+          <p className="text-xs text-indigo-400 font-semibold mb-1">💬 {chatToast.senderUsername}</p>
+          <p className="text-sm break-words">{chatToast.message}</p>
+        </div>
+      )}
       {/* <div className="text-white"> */}
-      <div className="grid grid-cols-3 max-w-6xl mx-auto mb-6 ">
-        <div >
-          {/* Przycisk powrotu do menu */}
-          <ReturnToMenuButton />
-        </div>
+      <div className="mx-auto mb-6 flex w-full max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Game-aware back to menu button */}
         <div>
-          {/* Tytuł strony */}
-          <h1 className="text-3xl font-bold whitespace-nowrap">Battleship — Game Board (vs AI)</h1>
+          <button
+            onClick={async () => {
+              if (!isPlacingShips && !isPvpWaiting && gameResult === null && gameId) {
+                // Active game — warn about forfeit
+                setShowLeaveConfirm(true);
+                setPendingLeaveAction('menu');
+              } else if (gameId && gameMode === 'pvp' && (isPvpWaiting || isPlacingShips)) {
+                // Pending PvP (waiting or still placing) — cancel game so opponent is notified
+                try {
+                  await axios.post(`${API_BASE_URL}/games/${gameId}/cancel/`, {}, { withCredentials: true });
+                } catch (e) {}
+                if (pvpPlacementTimerRef.current) { clearInterval(pvpPlacementTimerRef.current); pvpPlacementTimerRef.current = null; }
+                setPvpPlacementSecondsLeft(null);
+                gameSocket.disconnect();
+                navigate('/menu');
+              } else {
+                navigate('/menu');
+              }
+            }}
+            className="inline-flex w-full items-center justify-center rounded-md bg-slate-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-700 sm:w-auto sm:text-base"
+          >
+            ← Back to Menu
+          </button>
         </div>
-        <div>
-        </div>
+
+        {/* Tytuł strony */}
+        <h1 className="text-center text-xl font-bold leading-tight break-words sm:text-right sm:text-2xl lg:text-3xl">
+          Game Board <span className="block sm:inline">(vs {opponentName})</span>
+        </h1>
       </div>
 
       {/* Komunikat o błędzie */}
@@ -1585,7 +1977,7 @@ function Body() {
       {/* Komunikat ładowania */}
       {showLoadingBanner && (
         <div className="max-w-6xl mx-auto mb-6 p-4 bg-blue-500/20 border border-blue-500 rounded-lg text-blue-200">
-          {isCreatingGame ? 'Creating AI game...' : 'Loading game...'}
+          {isCreatingGame ? (gameMode === 'pvp' ? 'Creating PvP game...' : 'Creating AI game...') : 'Loading game...'}
         </div>
       )}
 
@@ -1613,6 +2005,87 @@ function Body() {
         </div>
       )}
 
+      {/* Modal: Leave game confirmation (Back to Menu / Logout during active game) */}
+      {showLeaveConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 border border-red-500 rounded-lg p-6 max-w-sm mx-4">
+            <h3 className="text-xl font-bold text-white mb-4">Leave Game?</h3>
+            <p className="text-slate-300 mb-6">
+              Leaving will <span className="text-red-400 font-bold">forfeit</span> the current game. You will lose.
+            </p>
+            <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <button
+                className="w-full sm:w-auto px-4 py-2 bg-slate-600 hover:bg-slate-700 rounded font-semibold transition-colors"
+                onClick={() => {
+                  setShowLeaveConfirm(false);
+                  setPendingLeaveAction(null);
+                }}
+              >
+                Stay in Game
+              </button>
+              <button
+                className="w-full sm:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-semibold transition-colors"
+                onClick={async () => {
+                  setShowLeaveConfirm(false);
+                  // Forfeit the game first
+                  if (gameId) {
+                    try {
+                      gameSocket.sendForfeit();
+                      await axios.post(
+                        `${API_BASE_URL}/games/${gameId}/forfeit/`,
+                        {},
+                        { withCredentials: true }
+                      );
+                      localStorage.removeItem(`game_${gameId}_ships`);
+                    } catch (err) {
+                      // Continue with navigation even if forfeit fails
+                    }
+                  }
+                  gameSocket.disconnect();
+                  if (pendingLeaveAction === 'menu') {
+                    navigate('/menu');
+                  }
+                  // 'logout' is handled by Components.js LogoutButton
+                  setPendingLeaveAction(null);
+                }}
+              >
+                Forfeit & Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Opponent disconnected notice with 60s reconnect countdown */}
+      {opponentDisconnectedNotice && (
+        <div className="mx-4 mb-4 rounded-lg border border-yellow-500 bg-yellow-500/20 p-3 text-center text-sm text-yellow-200 break-words sm:mx-auto sm:max-w-6xl sm:p-4 sm:text-base">
+          <span className="font-bold">{opponentName}</span> disconnected.{' '}
+          {opponentReconnectCountdown !== null && opponentReconnectCountdown > 0 ? (
+            <span>
+              They have{' '}
+              <span className={`font-bold ${opponentReconnectCountdown <= 10 ? 'text-red-400' : ''}`}>{opponentReconnectCountdown}s</span>{' '}
+              to reconnect, otherwise they forfeit.
+            </span>
+          ) : (
+            <span>Waiting for them to reconnect...</span>
+          )}
+        </div>
+      )}
+
+      {/* PvP waiting overlay: ships placed, waiting for opponent — shows live countdown */}
+      {isPvpWaiting && (
+        <div className="mx-4 mb-4 rounded-lg border border-blue-500 bg-blue-500/20 p-4 text-center text-blue-200 break-words sm:mx-auto sm:max-w-6xl sm:p-6">
+          <div className="mb-2 text-base font-semibold sm:text-lg">⏳ Waiting for {opponentName} to place their ships...</div>
+          {pvpPlacementSecondsLeft !== null ? (
+            <div className={`mt-1 text-xl font-bold sm:text-2xl ${pvpPlacementSecondsLeft <= 10 ? 'text-red-400' : 'text-blue-300'}`}>
+              {pvpPlacementSecondsLeft}s
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400 sm:text-sm">You will be notified when the game starts.</div>
+          )}
+        </div>
+      )}
+
       {/* You Lose Message */}
       {gameResult === 'lose' && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1624,14 +2097,16 @@ function Body() {
                 onClick={resetGameForNewRound}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded"
               >
-                Play Again
+                {gameMode === 'pvp' ? 'Back to Menu' : 'Play Again'}
               </button>
-              <button
-                onClick={() => navigate('/menu')}
-                className="bg-slate-600 hover:bg-slate-700 text-white font-semibold py-2 px-6 rounded"
-              >
-                Return to Menu
-              </button>
+              {gameMode !== 'pvp' && (
+                <button
+                  onClick={() => navigate('/menu')}
+                  className="bg-slate-600 hover:bg-slate-700 text-white font-semibold py-2 px-6 rounded"
+                >
+                  Return to Menu
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1647,14 +2122,16 @@ function Body() {
                 onClick={resetGameForNewRound}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded"
               >
-                Play Again
+                {gameMode === 'pvp' ? 'Back to Menu' : 'Play Again'}
               </button>
-              <button
-                onClick={() => navigate('/menu')}
-                className="bg-slate-600 hover:bg-slate-700 text-white font-semibold py-2 px-6 rounded"
-              >
-                Return to Menu
-              </button>
+              {gameMode !== 'pvp' && (
+                <button
+                  onClick={() => navigate('/menu')}
+                  className="bg-slate-600 hover:bg-slate-700 text-white font-semibold py-2 px-6 rounded"
+                >
+                  Return to Menu
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1662,6 +2139,15 @@ function Body() {
 
       {/* Panel sterowania */}
       <div className="max-w-6xl mx-auto mb-6 px-4">
+        {/* Player 2 countdown: timer from opponent placing ships first */}
+        {isPlacingShips && pvpPlacementSecondsLeft !== null && (
+          <div className={`mb-3 p-3 rounded-lg border text-center ${pvpPlacementSecondsLeft <= 10 ? 'bg-red-500/20 border-red-500 text-red-300' : 'bg-yellow-500/20 border-yellow-500 text-yellow-200'}`}>
+            <span className="font-semibold">⚠️ Opponent is ready!</span>{' '}
+            Place all your ships within{' '}
+            <span className={`font-bold text-lg ${pvpPlacementSecondsLeft <= 10 ? 'text-red-400' : 'text-yellow-100'}`}>{pvpPlacementSecondsLeft}s</span>
+          </div>
+        )}
+
         {/* Status gry */}
         <div className="text-slate-300 text-center sm:text-left mb-3 text-sm sm:text-base">{statusMessage}</div>
 
@@ -1789,7 +2275,7 @@ function Body() {
 
         {/* Plansza przeciwnika */}
         <div className="bg-slate-800/60 p-4 rounded-lg">
-          <h2 className="text-xl font-semibold mb-3">Enemy Board</h2>
+          <h2 className="text-xl font-semibold mb-3">{opponentName}'s Board</h2>
           {/* Siatka planszy przeciwnika */}
           <div className="w-full max-w-md mx-auto">
             {/* Column labels */}
@@ -1824,14 +2310,14 @@ function Body() {
         </div>
       </div>
 
-      {/* Game Chat */}
-      {!isPlacingShips && (
+      {/* Game Chat — only visible once the game is active (both players placed ships) */}
+      {!isPlacingShips && !isPvpWaiting && (
         <div className="max-w-6xl mx-auto mt-8 px-4">
           <div className="bg-slate-800/60 p-4 rounded-lg">
             <h3 className="text-lg font-semibold mb-3">💬 Game Chat</h3>
 
             {/* Messages area */}
-            <div className="overflow-y-auto space-y-2 mb-3 border border-slate-700 rounded-lg p-3 bg-slate-900/40" style={{ maxHeight: '240px', minHeight: '80px' }}>
+            <div ref={chatScrollRef} className="overflow-y-auto space-y-2 mb-3 border border-slate-700 rounded-lg p-3 bg-slate-900/40" style={{ maxHeight: '240px', minHeight: '80px' }}>
               {chatMessages.length === 0 && (
                 <p className="text-xs text-slate-500 text-center mt-4">No messages yet. Say hi!</p>
               )}
@@ -1846,7 +2332,7 @@ function Body() {
                   <div
                     className={`px-3 py-1.5 rounded-lg text-sm max-w-[70%] break-words ${msg.isMe
                       ? 'bg-indigo-600 text-white'
-                      : msg.senderUsername === 'AI'
+                      : (gameMode === 'ai' && !msg.isMe)
                         ? 'bg-amber-600/80 text-white'
                         : 'bg-slate-700 text-slate-200'
                       }`}

@@ -18,6 +18,7 @@ from .models import User
 from django.conf import settings
 import requests
 from django.shortcuts import redirect
+from urllib.parse import urlencode
 from game.redis_manager import GameStateManager
 
 @api_view(['POST'])
@@ -514,6 +515,12 @@ def update_profile(request):
 
 # 42 OAuth Login View
 
+def _get_42_redirect_uri(request):
+    configured_uri = getattr(settings, 'FORTY_TWO_REDIRECT_URI', None)
+    if configured_uri:
+        return configured_uri
+    return request.build_absolute_uri('/api/auth/oauth/42/callback/')
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def oauth_42_start(request):
@@ -521,17 +528,14 @@ def oauth_42_start(request):
     Redirect user to 42 OAuth authorization page
     """
     client_id = settings.FORTY_TWO_CLIENT_ID
-    # Dynamic redirect URI based on current host
-    # e.g. https://localhost:8080/api/auth/oauth/42/callback/
-    redirect_uri = request.build_absolute_uri('/api/auth/oauth/42/callback/')
-    
-    authorize_url = (
-        f"https://api.intra.42.fr/oauth/authorize"
-        f"?client_id={client_id}"
-        f"&redirect_uri={redirect_uri}"
-        f"&response_type=code"
-        f"&scope=public"
-    )
+    redirect_uri = _get_42_redirect_uri(request)
+
+    authorize_url = "https://api.intra.42.fr/oauth/authorize?" + urlencode({
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "public",
+    })
     return redirect(authorize_url)
 
 
@@ -550,8 +554,7 @@ def oauth_42_callback(request):
 
     # Exchange code for access token
     token_url = "https://api.intra.42.fr/oauth/token"
-    # Dynamic redirect URI must match the one used in authorization request
-    redirect_uri = request.build_absolute_uri('/api/auth/oauth/42/callback/')
+    redirect_uri = _get_42_redirect_uri(request)
     
     token_data = {
         "grant_type": "authorization_code",
@@ -567,8 +570,11 @@ def oauth_42_callback(request):
         token_json = token_response.json()
         access_token = token_json.get("access_token")
     except requests.RequestException as e:
+        response_text = ""
+        if hasattr(e, 'response') and e.response is not None:
+            response_text = f" | response: {e.response.text}"
         return Response(
-            {"error": f"Failed to obtain access token: {str(e)}"},
+            {"error": f"Failed to obtain access token: {str(e)}{response_text}"},
             status=status.HTTP_400_BAD_REQUEST
         )
 

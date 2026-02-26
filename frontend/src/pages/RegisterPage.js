@@ -81,7 +81,7 @@ function RegisterPage() {
         {/* Header */}
         <div className="text-center">
           <h1 className="text-5xl font-bold text-white tracking-wide drop-shadow-lg">
-            ⚓ BATTLESHIP
+            ⚓ BATTLESHIPS
           </h1>
           <p className="text-lg text-emerald-400 mt-2 tracking-wide">
             Create Your Account

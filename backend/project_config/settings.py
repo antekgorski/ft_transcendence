@@ -178,6 +178,7 @@ REST_FRAMEWORK = {
 # 42 OAuth Settings
 FORTY_TWO_CLIENT_ID = os.getenv('FORTY_TWO_CLIENT_ID')
 FORTY_TWO_CLIENT_SECRET = os.getenv('FORTY_TWO_CLIENT_SECRET')
+FORTY_TWO_REDIRECT_URI = os.getenv('FORTY_TWO_REDIRECT_URI')
 
 # Custom User Model
 AUTH_USER_MODEL = 'authentication.User'

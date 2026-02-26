@@ -61,7 +61,7 @@ function UserStats({ stats, loading, user }) {
                 <hr className="border-slate-600 my-4" />
                 <h3 className="text-lg font-semibold text-emerald-400 mt-6 mb-3">Game Statistics</h3>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                         <p><span className="text-emerald-400 font-semibold">Games Played:</span> {loading ? 'Loading...' : (stats.gamesPlayed ?? '0')}</p>
                         <p><span className="text-emerald-400 font-semibold">Games Won:</span> {loading ? 'Loading...' : (stats.gamesWon ?? '0')}</p>
@@ -265,7 +265,7 @@ function Body() {
     return (
         <div className="space-y-6 w-full max-w-6xl mx-auto text-white">
             <ReturnToMenuButton />
-            <div className="grid grid-cols-2 gap-8 items-start">
+            <div className="grid grid-cols-1 gap-8 items-start lg:grid-cols-2">
                 <UserStats stats={stats} loading={statsLoading} user={user} />
                 <UserAvatar user={user} />
             </div>
