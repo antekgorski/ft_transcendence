@@ -365,24 +365,24 @@ function FriendsManager() {
   };
 
   const fetchFriendsData = async (showLoading = false) => {
-    if (showLoading) setFriendsLoading(true);
-    setFriendsError('');
-    try {
-      const [acceptedResponse, pendingResponse, sentResponse] = await Promise.all([
-        api.get('/social/friendships/accepted/'),
-        api.get('/social/friendships/pending/'),
-        api.get('/social/friendships/sent/'),
-      ]);
-      setFriends(acceptedResponse.data || []);
-      setPendingRequests(pendingResponse.data || []);
-      setSentRequests(sentResponse.data || []);
-    } catch (err) {
-      console.error('Failed to load friends data:', err);
-      if (showLoading) setFriendsError('Failed to load friends data.');
-    } finally {
+      if (showLoading) setFriendsLoading(true);
+      setFriendsError('');
+      try {
+        const [acceptedResponse, pendingResponse, sentResponse] = await Promise.all([
+          api.get('/social/friendships/accepted/'),
+          api.get('/social/friendships/pending/'),
+          api.get('/social/friendships/sent/'),
+        ]);
+          setFriends(acceptedResponse.data || []);
+          setPendingRequests(pendingResponse.data || []);
+          setSentRequests(sentResponse.data || []);
+      } catch (err) {
+          console.error('Failed to load friends data:', err);
+          if (showLoading) setFriendsError('Failed to load friends data.');
+      } finally {
       setFriendsLoading(false);
-    }
-  };
+      }
+    };
 
   useEffect(() => {
     if (user?.id) {
@@ -746,9 +746,9 @@ function GameHistory() {
         const response = await api.get('/games/game_history/');
         setGames(response.data || []);
       } catch (err) {
-        const errorMsg = err.response?.data?.error || 'Failed to fetch game history';
-        setError(errorMsg);
-        console.error('Failed to fetch game history:', err);
+          const errorMsg = err.response?.data?.error || 'Failed to fetch game history';
+          setError(errorMsg);
+          console.error('Failed to fetch game history:', err);
       } finally {
         setLoading(false);
       }

@@ -17,9 +17,71 @@ from .models import User
 # (42 OAuth)
 from django.conf import settings
 import requests
+from django.core.cache import cache
+from importlib import import_module
+from django.conf import settings
+from game.redis_manager import GameStateManager
 from django.shortcuts import redirect
 from urllib.parse import urlencode
-from game.redis_manager import GameStateManager
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+import logging
+import logging
+
+logger = logging.getLogger(__name__)
+
+SessionStore = import_module(settings.SESSION_ENGINE).SessionStore
+
+def clear_user_sessions(user_id):
+    """
+    Finds and deletes any active Django sessions that belong to the given user UUID using Cache.
+    This enforces a single active session per user.
+    """
+    user_id_str = str(user_id)
+    cache_key = f"active_sessions_{user_id_str}"
+    old_sessions = cache.get(cache_key, [])
+    
+    print(f"DEBUG: Attempting to clear {len(old_sessions)} sessions for user_id={user_id_str} via cache")
+    deleted_count = 0
+    for old_key in old_sessions:
+        if old_key:
+            SessionStore(session_key=old_key).delete()
+            print(f"DEBUG: Deleted session {old_key}")
+            deleted_count += 1
+            
+    cache.delete(cache_key)
+    
+    # Broadcast force logout to any active WebSockets for this user
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"user_{user_id_str}",
+            {
+                "type": "force_logout",
+                "message": "Logged in from another device."
+            }
+        )
+        print(f"DEBUG: Broadcasted force_logout to user_{user_id_str}")
+    except Exception as e:
+        print(f"DEBUG: Failed to broadcast force_logout: {e}")
+        
+    print(f"DEBUG: Finished clearing sessions, deleted {deleted_count} total")
+
+def track_user_session(user_id, session_key):
+    """Stores the active session key in cache so it can be cleared later."""
+    if not session_key:
+        print("DEBUG: track_user_session called but session_key is empty/None!")
+        return
+    user_id_str = str(user_id)
+    cache_key = f"active_sessions_{user_id_str}"
+    
+    sessions = cache.get(cache_key, [])
+    if session_key not in sessions:
+        sessions.append(session_key)
+        cache.set(cache_key, sessions, 86400) # Match 24hr SESSION_COOKIE_AGE
+        print(f"DEBUG: Tying session {session_key} to user {user_id}. Cache now has: {sessions}")
+    else:
+        print(f"DEBUG: Session {session_key} already recorded. Cache has: {sessions}")
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -75,9 +137,17 @@ def register(request):
         user.assign_random_default_avatar()  # Assign random default avatar URL
         user.save()  # Now save with the password included
 
+        # Clear existing sessions for this user before creating a new one
+        clear_user_sessions(user.id)
+
         # Create session for the new user (auto-login)
+        request.session.flush()
         request.session['user_id'] = str(user.id)
         request.session.modified = True
+        
+        # Save session to generate a session_key immediately, then track it
+        request.session.save()
+        track_user_session(user.id, request.session.session_key)
 
         return Response(
             {
@@ -205,9 +275,17 @@ def login(request):
     user.last_login = timezone.now()
     user.save(update_fields=["last_login"])
 
+    # Clear existing sessions for this user before creating a new one
+    clear_user_sessions(user.id)
+
     # Zapisz użytkownika w sesji
+    request.session.flush()
     request.session['user_id'] = str(user.id)
     request.session['username'] = user.username
+    
+    # Save session to generate a session_key immediately, then track it
+    request.session.save()
+    track_user_session(user.id, request.session.session_key)
 
     return Response(
         {
@@ -570,11 +648,20 @@ def oauth_42_callback(request):
         token_json = token_response.json()
         access_token = token_json.get("access_token")
     except requests.RequestException as e:
-        response_text = ""
         if hasattr(e, 'response') and e.response is not None:
-            response_text = f" | response: {e.response.text}"
+            logger.warning(
+                "42 OAuth token exchange failed: %s | status=%s | body=%s",
+                str(e),
+                e.response.status_code,
+                e.response.text,
+            )
+        else:
+            logger.warning("42 OAuth token exchange failed: %s", str(e))
         return Response(
-            {"error": f"Failed to obtain access token: {str(e)}{response_text}"},
+            {
+                "error": "Failed to obtain access token from OAuth provider.",
+                "error_code": "oauth_token_exchange_failed",
+            },
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -712,9 +799,17 @@ def oauth_42_callback(request):
     user.last_login = timezone.now()
     user.save(update_fields=["last_login"])
 
+    # Clear existing sessions for this user before creating a new one
+    clear_user_sessions(user.id)
+
     # Create secure session (httpOnly cookie will be set automatically by Django)
+    request.session.flush()
     request.session['user_id'] = str(user.id)
     request.session.modified = True
+    
+    # Save session to generate a session_key immediately, then track it
+    request.session.save()
+    track_user_session(user.id, request.session.session_key)
     
     # Redirect to frontend root - will use the same domain/origin from the browser
     html_response = f"""

@@ -45,19 +45,26 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle 401 Unauthorized globally
-    if (error.response?.status === 401) {
-      console.warn('Unauthorized request, user may need to log in');
-    }
-    
-    // Handle 403 CSRF errors
-    if (error.response?.status === 403) {
+    // Handle 401 Unauthorized or 403 Forbidden globally
+    const status = error.response?.status;
+
+    if (status === 401 || status === 403) {
+      if (status === 401) {
+        console.warn('Unauthorized request, user may need to log in');
+      }
+
       const detail = error.response?.data?.detail || '';
-      if (detail.toLowerCase().includes('csrf')) {
+      const isCsrfError = detail.toLowerCase().includes('csrf');
+
+      if (status === 403 && isCsrfError) {
         console.error('CSRF token validation failed. Try refreshing the page.');
+      } else {
+        // If it's a 401, or a 403 that is NOT a CSRF error (e.g. Session invalid),
+        // dispatch a global event to let AuthContext know it needs to kick the user.
+        window.dispatchEvent(new Event('auth_error'));
       }
     }
-    
+
     return Promise.reject(error);
   }
 );

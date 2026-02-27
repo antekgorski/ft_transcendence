@@ -304,6 +304,19 @@ class GameViewSet(viewsets.ModelViewSet):
         return Game.objects.filter(
             Q(player_1_id=user_id) | Q(player_2_id=user_id)
         ).order_by('-started_at')
+
+    def _notify_game_cancelled(self, game_id, reason='player_left'):
+        """Notify all game participants that a pending game was cancelled."""
+        try:
+            channel_layer = get_channel_layer()
+            if channel_layer is None:
+                return
+            async_to_sync(channel_layer.group_send)(
+                f"game_{game_id}",
+                {'type': 'game_cancelled', 'reason': reason}
+            )
+        except Exception:
+            pass
     
     @action(detail=False, methods=['get'])
     def active(self, request):
@@ -388,6 +401,8 @@ class GameViewSet(viewsets.ModelViewSet):
                 p2_id = game_meta.get('player_2_id')
                 if p2_id:
                     self.redis_manager.remove_active_game(p2_id)
+                self.redis_manager.clear_placement_timer_start(active_game_id)
+                self._notify_game_cancelled(active_game_id, reason='player_left')
             else:
                 return Response(
                     {'error': 'User is already in a game'},
@@ -527,6 +542,354 @@ class GameViewSet(viewsets.ModelViewSet):
         user = request.user
         self.redis_manager.remove_from_pvp_queue(user.id)
         return Response({'status': 'cancelled'})
+
+    # ------------------------------------------------------------------
+    # Direct-invite system
+    # ------------------------------------------------------------------
+
+    @action(detail=False, methods=['get'], url_path='online-players')
+    def online_players(self, request):
+        """Return players who are online and not currently in a game."""
+        current_user = request.user
+
+        # Fetch all online user IDs from Redis
+        online_ids = self.redis_manager.get_all_online_user_ids()
+
+        # Remove ourselves, AI accounts and users in active games
+        candidate_ids = []
+        for uid in online_ids:
+            if uid == str(current_user.id):
+                continue
+            if self.redis_manager.get_active_game(uid):
+                continue
+            candidate_ids.append(uid)
+
+        if not candidate_ids:
+            return Response({'players': []})
+
+        users = User.objects.filter(
+            id__in=candidate_ids,
+            is_active=True,
+            is_staff=False,
+        ).values('id', 'username', 'display_name', 'avatar_url')
+
+        # Determine which of these players are friends
+        friend_ids = set()
+        friendships = Friendship.objects.filter(
+            Q(requester=current_user, addressee_id__in=candidate_ids) |
+            Q(addressee=current_user, requester_id__in=candidate_ids),
+            status='accepted',
+        )
+        for f in friendships:
+            friend_ids.add(str(f.requester_id))
+            friend_ids.add(str(f.addressee_id))
+        friend_ids.discard(str(current_user.id))
+
+        players = []
+        for u in users:
+            players.append({
+                'id': str(u['id']),
+                'username': u['username'],
+                'display_name': u['display_name'] or u['username'],
+                'is_friend': str(u['id']) in friend_ids,
+            })
+
+        # Friends first, then alphabetical
+        players.sort(key=lambda p: (not p['is_friend'], p['username'].lower()))
+
+        return Response({'players': players})
+
+    @action(detail=False, methods=['get'], url_path='invite/status')
+    def invite_status(self, request):
+        """Fetch the current user's active game invites, if any."""
+        current_user = request.user
+        
+        # Check if the user has a received invite
+        received_invite_id = self.redis_manager.get_user_received_invite(str(current_user.id))
+        if received_invite_id:
+            invite_data = self.redis_manager.get_invite(received_invite_id)
+            if invite_data:
+                # We need the from_username
+                try:
+                    from_user = User.objects.get(id=invite_data['from_user_id'])
+                    return Response({
+                        'type': 'received',
+                        'invite': {
+                            'inviteId': invite_data['invite_id'],
+                            'fromUserId': invite_data['from_user_id'],
+                            'fromUsername': from_user.username,
+                            'startedAt': int(float(datetime.fromisoformat(invite_data.get('created_at', datetime.utcnow().isoformat())).replace(tzinfo=dt_timezone.utc).timestamp()) * 1000)
+                        }
+                    })
+                except User.DoesNotExist:
+                    pass
+
+        # Check if the user has a sent invite
+        sent_invite_id = self.redis_manager.get_user_sent_invite(current_user.id)
+        if sent_invite_id:
+            invite_data = self.redis_manager.get_invite(sent_invite_id)
+            if invite_data:
+                # We need the target username
+                try:
+                    target_user = User.objects.get(id=invite_data['to_user_id'])
+                    return Response({
+                        'type': 'sent',
+                        'invite': {
+                            'inviteId': invite_data['invite_id'],
+                            'targetUserId': invite_data['to_user_id'],
+                            'targetUsername': target_user.username,
+                            'startedAt': int(float(datetime.fromisoformat(invite_data.get('created_at', datetime.utcnow().isoformat())).replace(tzinfo=dt_timezone.utc).timestamp()) * 1000)
+                        }
+                    })
+                except User.DoesNotExist:
+                    pass
+
+        return Response({'type': 'none'})
+
+    @action(detail=False, methods=['post'], url_path='invite')
+    def invite(self, request):
+        """Send a direct game invite to another online player."""
+        current_user = request.user
+        target_id = request.data.get('user_id')
+
+        if not target_id:
+            return Response({'error': 'user_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Guard: inviter already has a pending outgoing invite
+        if self.redis_manager.get_user_sent_invite(current_user.id):
+            return Response({'error': 'You already have a pending invite'}, status=status.HTTP_200_OK)
+
+        # Guard: inviter has a pending incoming invite they must respond to first (prevents mutual invites)
+        if self.redis_manager.get_user_received_invite(str(current_user.id)):
+            return Response({'error': 'You have a pending invite to respond to first'}, status=status.HTTP_200_OK)
+
+        # Guard: inviter already in a game
+        if self.redis_manager.get_active_game(current_user.id):
+            return Response({'error': 'You are already in a game'}, status=status.HTTP_200_OK)
+
+        try:
+            target = User.objects.get(id=target_id, is_active=True, is_staff=False)
+        except User.DoesNotExist:
+            return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not self.redis_manager.is_user_online(target_id):
+            return Response({'error': 'Player is offline'}, status=status.HTTP_200_OK)
+
+        if self.redis_manager.get_active_game(target_id):
+            return Response({'error': 'Player is already in a game'}, status=status.HTTP_200_OK)
+
+        if self.redis_manager.get_user_received_invite(target_id):
+            return Response({'error': 'Player already has a pending invite'}, status=status.HTTP_200_OK)
+
+        invite_id = str(uuid.uuid4())
+        self.redis_manager.create_invite(invite_id, current_user.id, target_id)
+        self.redis_manager.set_user_sent_invite(current_user.id, invite_id)
+        self.redis_manager.set_user_received_invite(target_id, invite_id)
+
+        # Push real-time notification to target via WebSocket
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{target_id}",
+                    {
+                        'type': 'invite_received',
+                        'invite_id': invite_id,
+                        'from_user_id': str(current_user.id),
+                        'from_username': current_user.username,
+                    },
+                )
+            except Exception:
+                pass
+
+        return Response({'invite_id': invite_id, 'status': 'sent'}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='invite/cancel')
+    def invite_cancel(self, request):
+        """Cancel the current user's pending outgoing invite."""
+        current_user = request.user
+
+        invite_id = self.redis_manager.get_user_sent_invite(current_user.id)
+        if not invite_id:
+            # If there's no pending invite, it's already cancelled (idempotent)
+            return Response({'status': 'cancelled', 'note': 'No pending invite'}, status=status.HTTP_200_OK)
+
+        invite_data = self.redis_manager.get_invite(invite_id)
+        to_user_id = invite_data.get('to_user_id') if invite_data else None
+
+        self.redis_manager.delete_invite(invite_id)
+        self.redis_manager.clear_user_sent_invite(current_user.id)
+        if to_user_id:
+            self.redis_manager.clear_user_received_invite(to_user_id)
+
+        if to_user_id:
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f"user_{to_user_id}",
+                        {
+                            'type': 'invite_cancelled',
+                            'invite_id': invite_id,
+                        },
+                    )
+                except Exception:
+                    pass
+
+        return Response({'status': 'cancelled'})
+
+    @action(detail=False, methods=['post'], url_path=r'invite/(?P<invite_id>[^/.]+)/accept')
+    def invite_accept(self, request, invite_id=None):
+        """Accept a game invite and create the game."""
+        current_user = request.user
+
+        # Auto-cancel any outgoing invite from this user
+        sent_invite_id = self.redis_manager.get_user_sent_invite(current_user.id)
+        if sent_invite_id:
+            sent_invite_data = self.redis_manager.get_invite(sent_invite_id)
+            if sent_invite_data:
+                to_user_id = sent_invite_data.get('to_user_id')
+                
+                self.redis_manager.delete_invite(sent_invite_id)
+                self.redis_manager.clear_user_sent_invite(current_user.id)
+                if to_user_id:
+                    self.redis_manager.clear_user_received_invite(to_user_id)
+                    
+                    channel_layer = get_channel_layer()
+                    if channel_layer:
+                        try:
+                            async_to_sync(channel_layer.group_send)(
+                                f"user_{to_user_id}",
+                                {
+                                    'type': 'invite_cancelled',
+                                    'invite_id': sent_invite_id,
+                                },
+                            )
+                        except Exception:
+                            pass
+
+        invite_data = self.redis_manager.get_invite(invite_id)
+        if not invite_data:
+            return Response({'error': 'Invite not found or expired'}, status=status.HTTP_404_NOT_FOUND)
+
+        if str(invite_data.get('to_user_id')) != str(current_user.id):
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        from_user_id = invite_data.get('from_user_id')
+
+        # Guard against race condition: if the inviter's sent-invite key was already
+        # cleared (because they cancelled or the TTL fired), treat this as expired.
+        # This key is cleared atomically by `invite_cancel` before `delete_invite`,
+        # so this check is the safest serialisation point.
+        if self.redis_manager.get_user_sent_invite(from_user_id) != invite_id:
+            # Clean up the stale received-invite key for the acceptor
+            self.redis_manager.clear_user_received_invite(current_user.id)
+            return Response({'error': 'Invite not found or expired'}, status=status.HTTP_404_NOT_FOUND)
+
+        if self.redis_manager.get_active_game(current_user.id):
+            return Response({'error': 'You are already in a game'}, status=status.HTTP_409_CONFLICT)
+        if self.redis_manager.get_active_game(from_user_id):
+            return Response({'error': 'Inviter is already in a game'}, status=status.HTTP_409_CONFLICT)
+
+        try:
+            from_user = User.objects.get(id=from_user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'Inviter not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        game_id = str(uuid.uuid4())
+        self.redis_manager.create_game(
+            game_id=game_id,
+            player_1_id=str(from_user.id),
+            player_2_id=str(current_user.id),
+            game_type='pvp',
+            player_1_username=from_user.username,
+            player_2_username=current_user.username,
+        )
+        self.redis_manager.set_active_game(from_user.id, game_id)
+        self.redis_manager.set_active_game(current_user.id, game_id)
+
+        # Clean up invite state
+        self.redis_manager.delete_invite(invite_id)
+        self.redis_manager.clear_user_sent_invite(from_user_id)
+        self.redis_manager.clear_user_received_invite(current_user.id)
+
+        # Notify inviter via WebSocket
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{from_user_id}",
+                    {
+                        'type': 'invite_accepted',
+                        'invite_id': invite_id,
+                        'game_id': game_id,
+                        'by_username': current_user.username,
+                    },
+                )
+            except Exception:
+                pass
+
+        # Auto-reject any incoming invite for the inviter (since they are now in a game)
+        p1_received_invite_id = self.redis_manager.get_user_received_invite(from_user_id)
+        if p1_received_invite_id:
+            p1_received_invite_data = self.redis_manager.get_invite(p1_received_invite_id)
+            if p1_received_invite_data:
+                p3_id = p1_received_invite_data.get('from_user_id')
+                self.redis_manager.delete_invite(p1_received_invite_id)
+                self.redis_manager.clear_user_received_invite(from_user_id)
+                if p3_id:
+                    self.redis_manager.clear_user_sent_invite(p3_id)
+                    if channel_layer:
+                        try:
+                            async_to_sync(channel_layer.group_send)(
+                                f"user_{p3_id}",
+                                {
+                                    'type': 'invite_rejected',
+                                    'invite_id': p1_received_invite_id,
+                                    'by_username': from_user.username,
+                                },
+                            )
+                        except Exception:
+                            pass
+
+        return Response({'status': 'accepted', 'game_id': game_id})
+
+    @action(detail=False, methods=['post'], url_path=r'invite/(?P<invite_id>[^/.]+)/reject')
+    def invite_reject(self, request, invite_id=None):
+        """Reject a game invite."""
+        current_user = request.user
+
+        invite_data = self.redis_manager.get_invite(invite_id)
+        if not invite_data:
+            # Idempotent rejection: if it doesn't exist, treat as already rejected
+            return Response({'status': 'rejected', 'note': 'Invite not found or expired'}, status=status.HTTP_200_OK)
+
+        if str(invite_data.get('to_user_id')) != str(current_user.id):
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        from_user_id = invite_data.get('from_user_id')
+
+        self.redis_manager.delete_invite(invite_id)
+        if from_user_id:
+            self.redis_manager.clear_user_sent_invite(from_user_id)
+        self.redis_manager.clear_user_received_invite(current_user.id)
+
+        if from_user_id:
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f"user_{from_user_id}",
+                        {
+                            'type': 'invite_rejected',
+                            'invite_id': invite_id,
+                            'by_username': current_user.username,
+                        },
+                    )
+                except Exception:
+                    pass
+
+        return Response({'status': 'rejected'})
 
     def _extract_ai_ships(self, ai_board):
         """Extract AI ship positions from generated board."""
@@ -683,8 +1046,8 @@ class GameViewSet(viewsets.ModelViewSet):
         game_meta = self.redis_manager.get_game_meta(id)
         if not game_meta:
             return Response(
-                {'error': 'Game not found'},
-                status=status.HTTP_404_NOT_FOUND
+                {'status': 'declined', 'note': 'Game not found'},
+                status=status.HTTP_200_OK
             )
         
         user = request.user
@@ -828,7 +1191,7 @@ class GameViewSet(viewsets.ModelViewSet):
         """Cancel a pending PvP game (called when either player leaves during ship placement)."""
         game_meta = self.redis_manager.get_game_meta(id)
         if not game_meta:
-            return Response({'error': 'Game not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'status': 'cancelled', 'note': 'Game not found'}, status=status.HTTP_200_OK)
 
         user = request.user
         player_1_id = game_meta.get('player_1_id')
@@ -848,14 +1211,7 @@ class GameViewSet(viewsets.ModelViewSet):
         self.redis_manager.clear_placement_timer_start(id)
 
         # Notify both players so the other side can redirect to menu
-        try:
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                f"game_{id}",
-                {'type': 'game_cancelled', 'reason': 'player_left'}
-            )
-        except Exception:
-            pass
+        self._notify_game_cancelled(id, reason='player_left')
 
         return Response({'status': 'cancelled'})
 
@@ -1265,8 +1621,11 @@ class GameViewSet(viewsets.ModelViewSet):
         # Update player stats
         self._update_player_stats(game)
         
-        # Update Redis
+        # Update Redis — mark game done and release active-game slots
         self.redis_manager.end_game(str(game.id))
+        self.redis_manager.remove_active_game(str(game.player_1_id))
+        if game.player_2_id:
+            self.redis_manager.remove_active_game(str(game.player_2_id))
         
         serializer = self.get_serializer(game)
         return Response(serializer.data)

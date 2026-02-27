@@ -75,6 +75,11 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.user = user
                 # Mark user as online
                 await self._mark_user_online()
+                # Join personal channel group for direct messages (invites, etc.)
+                await self.channel_layer.group_add(
+                    f"user_{self.user.id}",
+                    self.channel_name,
+                )
             else:
                 # Don't set user yet; wait for join message with game_id validation
                 self.user = None
@@ -98,7 +103,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.user:
             # Mark user as offline
             await self._mark_user_offline()
-            
+
+            # Leave personal channel group
+            await self.channel_layer.group_discard(
+                f"user_{self.user.id}",
+                self.channel_name,
+            )
+
             if self.game_id:
                 game_meta = self.redis_manager.get_game_meta(self.game_id)
                 game_status = game_meta.get('status') if game_meta else None
@@ -119,7 +130,26 @@ class GameConsumer(AsyncWebsocketConsumer):
                         )
                     
                     asyncio.create_task(self._schedule_disconnect_forfeit(self.game_id, str(self.user.id)))
-                # For pending games (ship placement phase), just leave quietly
+                elif game_status == 'pending':
+                    # Player left before placing ships — clean up so they become available again.
+                    p1_id = game_meta.get('player_1_id')
+                    p2_id = game_meta.get('player_2_id')
+                    game_type = game_meta.get('game_type')
+                    self.redis_manager.remove_active_game(str(self.user.id))
+                    if game_type == 'pvp':
+                        # For PvP pending games cancel entirely so neither player is stuck.
+                        self.redis_manager.delete_game(self.game_id)
+                        if p1_id:
+                            self.redis_manager.remove_active_game(p1_id)
+                        if p2_id:
+                            self.redis_manager.remove_active_game(p2_id)
+                        asyncio.create_task(self.channel_layer.group_send(
+                            f"game_{self.game_id}",
+                            {'type': 'game_cancelled', 'reason': 'player_left'},
+                        ))
+                    else:
+                        # AI pending game — just clear the entry for this user.
+                        self.redis_manager.delete_game(self.game_id)
         
         if self.game_id:
             # Leave game group
@@ -244,6 +274,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self._handle_game_forfeit(data)
             elif message_type == 'chat_message':
                 await self._handle_chat_message(data)
+            elif message_type == 'leave_game':
+                await self._handle_leave_game()
             else:
                 await self.send_error('Unknown message type')
         
@@ -265,6 +297,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             user = self.scope.get("user")
             if user and getattr(user, "is_authenticated", False):
                 self.user = user
+                # Join personal group now that we have a confirmed user
+                await self.channel_layer.group_add(
+                    f"user_{self.user.id}",
+                    self.channel_name,
+                )
             else:
                 await self.send_error('Authentication required to join a game')
                 return
@@ -510,6 +547,63 @@ class GameConsumer(AsyncWebsocketConsumer):
             # Hit: same player shoots again
             self.redis_manager.set_current_turn(self.game_id, player_id)
     
+    async def _handle_leave_game(self):
+        """Handle graceful early leave during ship placement (pending game phase).
+        Called when the frontend navigates away before a game starts.
+        Mirrors the pending-status branch of disconnect().
+        """
+        if not self.game_id:
+            return
+
+        game_meta = self.redis_manager.get_game_meta(self.game_id)
+        if not game_meta:
+            self.game_id = None
+            return
+
+        game_status = game_meta.get('status')
+        if game_status == 'pending':
+            p1_id = game_meta.get('player_1_id')
+            p2_id = game_meta.get('player_2_id')
+            game_type = game_meta.get('game_type')
+
+            if game_type == 'pvp':
+                self.redis_manager.delete_game(self.game_id)
+                if p1_id:
+                    self.redis_manager.remove_active_game(p1_id)
+                if p2_id:
+                    self.redis_manager.remove_active_game(p2_id)
+                asyncio.create_task(self.channel_layer.group_send(
+                    f"game_{self.game_id}",
+                    {'type': 'game_cancelled', 'reason': 'player_left'},
+                ))
+            else:
+                # AI game
+                self.redis_manager.delete_game(self.game_id)
+                self.redis_manager.remove_active_game(str(self.user.id))
+        elif game_status == 'active':
+            # Record disconnect and schedule forfeit after 60s grace period
+            self.redis_manager.set_player_disconnected(self.game_id, str(self.user.id))
+            
+            # Notify opponent of disconnection (PvP only)
+            if game_meta.get('game_type') == 'pvp':
+                await self.channel_layer.group_send(
+                    f"game_{self.game_id}",
+                    {
+                        'type': 'opponent_disconnected',
+                        'disconnected_player_id': str(self.user.id),
+                        'reconnect_timeout_seconds': 60,
+                    }
+                )
+            
+            asyncio.create_task(self._schedule_disconnect_forfeit(self.game_id, str(self.user.id)))
+
+        # Leave the game channel group and clear local game reference
+        await self.channel_layer.group_discard(
+            f"game_{self.game_id}",
+            self.channel_name,
+        )
+        self.game_id = None
+
     async def _handle_game_forfeit(self, data):
         """Handle game forfeit."""
         if not self.game_id:
@@ -593,6 +687,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.send(json.dumps({
             'type': 'opponent_disconnected',
             'disconnected_player_id': event['disconnected_player_id'],
+            'reconnect_timeout_seconds': event.get('reconnect_timeout_seconds'),
         }))
     
     async def game_start(self, event):
@@ -659,9 +754,54 @@ class GameConsumer(AsyncWebsocketConsumer):
             'message': event.get('message'),
             'data': event.get('data', {}),
         }))
+
+    # ------------------------------------------------------------------
+    # Direct-invite event handlers (sent to user_{user_id} group)
+    # ------------------------------------------------------------------
+
+    async def invite_received(self, event):
+        """Forward incoming game invite to the WebSocket client."""
+        await self.send(json.dumps({
+            'type': 'invite_received',
+            'invite_id': event['invite_id'],
+            'from_user_id': event['from_user_id'],
+            'from_username': event['from_username'],
+        }))
+
+    async def invite_cancelled(self, event):
+        """Notify the invitee that the invite was cancelled."""
+        await self.send(json.dumps({
+            'type': 'invite_cancelled',
+            'invite_id': event['invite_id'],
+        }))
+
+    async def invite_accepted(self, event):
+        """Notify the inviter that their invite was accepted; carry game_id."""
+        await self.send(json.dumps({
+            'type': 'invite_accepted',
+            'invite_id': event['invite_id'],
+            'game_id': event['game_id'],
+            'by_username': event['by_username'],
+        }))
+
+    async def invite_rejected(self, event):
+        """Notify the inviter that their invite was rejected."""
+        await self.send(json.dumps({
+            'type': 'invite_rejected',
+            'invite_id': event['invite_id'],
+            'by_username': event['by_username'],
+        }))
     
     # Utility methods
     
+    async def force_logout(self, event):
+        """Handle forced logout from another login."""
+        await self.send(json.dumps({
+            'type': 'force_logout',
+            'message': event.get('message', 'Logged in from another device.')
+        }))
+        await self.close(code=4001)
+
     async def send_error(self, message):
         """Send error message to client."""
         await self.send(json.dumps({
@@ -1068,8 +1208,17 @@ class GameConsumer(AsyncWebsocketConsumer):
         from game.models import Game, PlayerStats
         from authentication.models import User
 
-        # Check if game already exists (to avoid duplicate creation if called multiple times)
+        # Check if game already exists (REST endpoint may have already saved it).
+        # Still ensure active-game Redis keys are cleared even on this early path.
         if Game.objects.filter(id=self.game_id).exists():
+            game_meta = self.redis_manager.get_game_meta(self.game_id)
+            if game_meta:
+                p1 = game_meta.get('player_1_id')
+                p2 = game_meta.get('player_2_id')
+                if p1:
+                    self.redis_manager.remove_active_game(p1)
+                if p2:
+                    self.redis_manager.remove_active_game(p2)
             return
 
         game_meta = self.redis_manager.get_game_meta(self.game_id)
@@ -1249,8 +1398,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.user:
             self.redis_manager.set_user_offline(str(self.user.id))
     
-    # _set_grace_period removed: reconnection grace period replaced by immediate forfeit
-
+    # _set_grace_period removed: isconnection handling now uses _schedule_disconnect_forfeit
+    # which applies a time-limited (e.g., 60s) grace period before finalizing a forfeit.
 
     @database_sync_to_async
     def _finalize_forfeit(self, forfeiting_user_id, game_id):

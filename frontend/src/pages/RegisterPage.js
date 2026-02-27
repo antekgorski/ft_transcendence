@@ -55,9 +55,9 @@ function RegisterPage() {
         await checkAuth();
       }
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 
-                       err.response?.data?.error_pl || 
-                       'Registration failed';
+      const errorMsg = err.response?.data?.error ||
+        err.response?.data?.error_pl ||
+        'Registration failed';
       setError(errorMsg);
       console.error('Registration error:', err);
       setLoading(false);
@@ -67,7 +67,7 @@ function RegisterPage() {
   // Cleanup timeout on unmount and redirect after successful registration
   useEffect(() => {
     if (!success) return;
-    
+
     const timer = setTimeout(() => {
       navigate('/');
     }, 1000);
@@ -114,6 +114,7 @@ function RegisterPage() {
               onChange={handleInputChange}
               required
               disabled={loading}
+              autoComplete="username"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
                          focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
                          disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
@@ -127,6 +128,7 @@ function RegisterPage() {
               onChange={handleInputChange}
               required
               disabled={loading}
+              autoComplete="email"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
                          focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
                          disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
@@ -141,6 +143,7 @@ function RegisterPage() {
               required
               disabled={loading}
               minLength={8}
+              autoComplete="new-password"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
                          focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
                          disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
@@ -154,6 +157,7 @@ function RegisterPage() {
               onChange={handleInputChange}
               required
               disabled={loading}
+              autoComplete="new-password"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
                          focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
                          disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
@@ -169,7 +173,7 @@ function RegisterPage() {
             >
               {loading ? 'REGISTERING...' : 'REGISTER'}
             </button>
-            
+
             <button
               type="button"
               onClick={() => window.location.href = `${API_BASE_URL}/auth/oauth/42/start/`}

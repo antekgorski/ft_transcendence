@@ -340,3 +340,67 @@ class GameStateManager:
                 self.remove_from_pvp_queue(opponent_id)
                 continue
             return opponent_id
+
+    # ------------------------------------------------------------------
+    # Invite system
+    # ------------------------------------------------------------------
+
+    def create_invite(self, invite_id, from_user_id, to_user_id, ttl=30):
+        """Create a game invite with a 30-second TTL."""
+        key = f"invite:{invite_id}"
+        self.redis_client.hset(key, mapping={
+            'invite_id': str(invite_id),
+            'from_user_id': str(from_user_id),
+            'to_user_id': str(to_user_id),
+            'created_at': datetime.utcnow().isoformat(),
+        })
+        self.redis_client.expire(key, ttl)
+
+    def get_invite(self, invite_id):
+        """Get invite data, or None if it has expired/not exist."""
+        key = f"invite:{invite_id}"
+        data = self.redis_client.hgetall(key)
+        return data if data else None
+
+    def delete_invite(self, invite_id):
+        """Delete an invite immediately."""
+        self.redis_client.delete(f"invite:{invite_id}")
+
+    def get_user_sent_invite(self, user_id):
+        """Return the invite_id sent by this user (or None)."""
+        return self.redis_client.get(f"invite:sent:{user_id}")
+
+    def set_user_sent_invite(self, user_id, invite_id, ttl=32):
+        """Record that this user has a pending outgoing invite."""
+        self.redis_client.set(f"invite:sent:{user_id}", str(invite_id), ex=ttl)
+
+    def clear_user_sent_invite(self, user_id):
+        """Clear outgoing invite tracking for a user."""
+        self.redis_client.delete(f"invite:sent:{user_id}")
+
+    def get_user_received_invite(self, user_id):
+        """Return the invite_id received by this user (or None)."""
+        return self.redis_client.get(f"invite:received:{user_id}")
+
+    def set_user_received_invite(self, user_id, invite_id, ttl=32):
+        """Record that this user has a pending incoming invite."""
+        self.redis_client.set(f"invite:received:{user_id}", str(invite_id), ex=ttl)
+
+    def clear_user_received_invite(self, user_id):
+        """Clear incoming invite tracking for a user."""
+        self.redis_client.delete(f"invite:received:{user_id}")
+
+    def get_all_online_user_ids(self):
+        """Return all user IDs that are currently marked online."""
+        user_ids = []
+        cursor = 0
+        while True:
+            cursor, keys = self.redis_client.scan(cursor, match="user:*:online", count=200)
+            for key in keys:
+                parts = key.split(':')
+                # key format: user:{user_id}:online
+                if len(parts) == 3:
+                    user_ids.append(parts[1])
+            if cursor == 0:
+                break
+        return user_ids

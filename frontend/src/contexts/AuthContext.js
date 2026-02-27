@@ -40,6 +40,18 @@ export const AuthProvider = ({ children }) => {
       await checkAuth();
     };
     initialize();
+
+    const handleAuthError = () => {
+      setUser(null);
+      if (gameSocket.socket) {
+        gameSocket.disconnect();
+      }
+    };
+
+    window.addEventListener('auth_error', handleAuthError);
+    return () => {
+      window.removeEventListener('auth_error', handleAuthError);
+    };
   }, []);
 
   return (
