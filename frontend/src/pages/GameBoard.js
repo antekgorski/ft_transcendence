@@ -84,6 +84,7 @@ function Body() {
   const draggedShipRef = useRef(null);
   const touchGestureRef = useRef(null);
   const suppressNextClickRef = useRef(false);
+  const [isTouchGestureActive, setIsTouchGestureActive] = useState(false);
 
   // Stan dla forfeit
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
@@ -1265,6 +1266,8 @@ function Body() {
     const touch = e.touches?.[0];
     if (!touch) return;
 
+    setIsTouchGestureActive(true);
+
     touchGestureRef.current = {
       type: 'palette',
       shipSize,
@@ -1403,7 +1406,10 @@ function Body() {
 
   const handleTouchEnd = (e) => {
     const gesture = touchGestureRef.current;
-    if (!gesture) return;
+    if (!gesture) {
+      setIsTouchGestureActive(false);
+      return;
+    }
 
     if (gesture.dragStarted) {
       const touch = e.changedTouches?.[0];
@@ -1420,6 +1426,7 @@ function Body() {
     }
 
     touchGestureRef.current = null;
+    setIsTouchGestureActive(false);
   };
 
   const isPreviewCell = (row, col) => {
@@ -1483,6 +1490,8 @@ function Body() {
 
     const touch = e.touches?.[0];
     if (!touch) return;
+
+    setIsTouchGestureActive(true);
 
     touchGestureRef.current = {
       type: 'placed',
@@ -1987,13 +1996,15 @@ function Body() {
         gameSocket.connect(
           gameId,
           () => {
-            setStatusMessage('Game started! Your turn - shoot on enemy board.');
-            setIsMyTurn(true);
+            console.log('Connected to WS');
           },
           (error) => {
             setStatusMessage('Connection error: ' + error.message);
           }
         );
+        // For AI, immediately set turn and status since we don't wait for opponent placement
+        setStatusMessage('Game started! Your turn - shoot on enemy board.');
+        setIsMyTurn(true);
       }
     } catch (err) {
       // 409 means ships were already placed - this can happen if the game continued from a previous session
@@ -2060,6 +2071,8 @@ function Body() {
     if (cellType === CELL_TYPES.MISS) return `${base} bg-slate-500`;
     return `${base} bg-slate-800`;
   };
+
+  const shouldDisableTouchPanning = isPlacingShips;
 
   // Render komponentu Body.
   return (
@@ -2283,7 +2296,7 @@ function Body() {
       )}
 
       {/* Panel sterowania */}
-      <div className="max-w-6xl mx-auto mb-6 px-4 touch-none">
+      <div className="max-w-6xl mx-auto mb-6 px-4">
         {/* Player 2 countdown: timer from opponent placing ships first */}
         {isPlacingShips && pvpPlacementSecondsLeft !== null && (
           <div className={`mb-3 p-3 rounded-lg border text-center ${pvpPlacementSecondsLeft <= 10 ? 'bg-red-500/20 border-red-500 text-red-300' : 'bg-yellow-500/20 border-yellow-500 text-yellow-200'}`}>
@@ -2377,10 +2390,10 @@ function Body() {
       {/* Sekcja plansz */}
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Plansza gracza */}
-        <div className="bg-slate-800/60 p-4 rounded-lg touch-none">
+        <div className="bg-slate-800/60 p-4 rounded-lg">
           <h2 className="text-xl font-semibold mb-3">Your Board</h2>
           {/* Siatka planszy gracza */}
-          <div className="w-full max-w-md mx-auto touch-none">
+          <div className="w-full max-w-md mx-auto">
             {/* Column labels */}
             <div className="flex mb-1">
               <div className="w-6 h-6"></div>
@@ -2404,7 +2417,7 @@ function Body() {
                         data-player-cell="true"
                         data-row={rowIdx}
                         data-col={colIdx}
-                        className={`${getPlayerCellClass(cell, rowIdx, colIdx)} touch-none`}
+                        className={`${getPlayerCellClass(cell, rowIdx, colIdx)} ${shouldDisableTouchPanning ? 'touch-none' : ''}`}
                         onDragOver={(e) => handleDragOver(e, rowIdx, colIdx)}
                         onDrop={(e) => handleDrop(e, rowIdx, colIdx)}
                         onDragLeave={handleDragLeave}
