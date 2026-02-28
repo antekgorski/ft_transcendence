@@ -1,9 +1,14 @@
+import time
+import uuid
+from datetime import datetime, timezone as dt_timezone
 from django.utils import timezone
 from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 from .models import Game, PlayerStats
 from .serializers import (
@@ -299,24 +304,51 @@ class GameViewSet(viewsets.ModelViewSet):
         return Game.objects.filter(
             Q(player_1_id=user_id) | Q(player_2_id=user_id)
         ).order_by('-started_at')
+
+    def _notify_game_cancelled(self, game_id, reason='player_left'):
+        """Notify all game participants that a pending game was cancelled."""
+        try:
+            channel_layer = get_channel_layer()
+            if channel_layer is None:
+                return
+            async_to_sync(channel_layer.group_send)(
+                f"game_{game_id}",
+                {'type': 'game_cancelled', 'reason': reason}
+            )
+        except Exception:
+            pass
     
     @action(detail=False, methods=['get'])
     def active(self, request):
         """Get the user's current active game."""
         user = request.user
-        active_game = Game.objects.filter(
-            Q(player_1_id=user.id) | Q(player_2_id=user.id),
-            status__in=['pending', 'active']
-        ).first()
         
-        if not active_game:
-            return Response(
-                {'detail': 'No active game'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        # Check Redis for active game
+        active_game_id = self.redis_manager.get_active_game(user.id)
         
-        serializer = self.get_serializer(active_game)
-        return Response(serializer.data)
+        if not active_game_id:
+            return Response({'game_id': None, 'active': False})
+            
+        # Verify game metadata exists
+        game_meta = self.redis_manager.get_game_meta(active_game_id)
+        if not game_meta:
+            # Stale active game reference
+            self.redis_manager.remove_active_game(user.id)
+            return Response({'game_id': None, 'active': False})
+        
+        # Construct response similar to what frontend expects
+        # Note: We return snake_case keys as that's what DRF serializers typically produce
+        return Response({
+            'id': game_meta.get('game_id'),
+            'player_1': game_meta.get('player_1_id'),
+            'player_2': game_meta.get('player_2_id') or None,
+            'player_1_username': game_meta.get('player_1_username', ''),
+            'player_2_username': game_meta.get('player_2_username', ''),
+            'game_type': game_meta.get('game_type'),
+            'status': game_meta.get('status'),
+            'created_at': game_meta.get('created_at'),
+            'active': True
+        })
     
     @action(detail=False, methods=['get'])
     def leaderboard(self, request):
@@ -356,16 +388,26 @@ class GameViewSet(viewsets.ModelViewSet):
         user = request.user
         
         # Check if user is already in an active game
-        active_game = Game.objects.filter(
-            Q(player_1_id=user.id) | Q(player_2_id=user.id),
-            status__in=['pending', 'active']
-        ).first()
+        active_game_id = self.redis_manager.get_active_game(user.id)
         
-        if active_game:
-            return Response(
-                {'error': 'User is already in a game'},
-                status=status.HTTP_409_CONFLICT
-            )
+        if active_game_id:
+            game_meta = self.redis_manager.get_game_meta(active_game_id)
+            game_type_req = request.data.get('game_type', 'ai')
+            # Auto-clear a stale pending PvP game when the user wants to start AI
+            if game_meta and game_meta.get('game_type') == 'pvp' and game_meta.get('status') == 'pending' and game_type_req == 'ai':
+                logger.info('Auto-clearing stale pending PvP game %s for user %s before AI game creation', active_game_id, user.id)
+                self.redis_manager.delete_game(active_game_id)
+                self.redis_manager.remove_active_game(user.id)
+                p2_id = game_meta.get('player_2_id')
+                if p2_id:
+                    self.redis_manager.remove_active_game(p2_id)
+                self.redis_manager.clear_placement_timer_start(active_game_id)
+                self._notify_game_cancelled(active_game_id, reason='player_left')
+            else:
+                return Response(
+                    {'error': 'User is already in a game'},
+                    status=status.HTTP_409_CONFLICT
+                )
         
         serializer = GameCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -389,49 +431,465 @@ class GameViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Check if players are friends
-        friendship = Friendship.objects.filter(
-            Q(requester=player_1, addressee=opponent) |
-            Q(requester=opponent, addressee=player_1),
-            status__in=['accepted']
-        ).first()
-        
-        if not friendship:
-            return Response(
-                {'error': 'Cannot challenge this user. You must be friends.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        # friendship = Friendship.objects.filter(
+        #     Q(requester=player_1, addressee=opponent) |
+        #     Q(requester=opponent, addressee=player_1),
+        #     status__in=['accepted']
+        # ).first()
+        #
+        # if not friendship:
+        #     return Response(
+        #         {'error': 'Cannot challenge this user. You must be friends.'},
+        #         status=status.HTTP_403_FORBIDDEN
+        #     )
         
         # Check if opponent is in a game
-        opponent_active = Game.objects.filter(
-            Q(player_1_id=opponent.id) | Q(player_2_id=opponent.id),
-            status__in=['pending', 'active']
-        ).exists()
-        
-        if opponent_active:
+        if self.redis_manager.get_active_game(opponent.id):
             return Response(
                 {'error': 'Opponent is currently in a game'},
                 status=status.HTTP_409_CONFLICT
             )
         
-        # Create game
-        game = Game.objects.create(
-            player_1=player_1,
-            player_2=opponent,
-            game_type='pvp',
-            status='pending'
-        )
+        # Generate ID
+        game_id = str(uuid.uuid4())
         
         # Initialize game state in Redis
         self.redis_manager.create_game(
-            game_id=str(game.id),
+            game_id=game_id,
             player_1_id=str(player_1.id),
             player_2_id=str(opponent.id),
-            game_type='pvp'
+            game_type='pvp',
+            player_1_username=player_1.username,
+            player_2_username=opponent.username
         )
         
-        serializer = self.get_serializer(game)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Set active game for both players
+        self.redis_manager.set_active_game(player_1.id, game_id)
+        self.redis_manager.set_active_game(opponent.id, game_id)
+        
+        return Response({
+            'id': game_id,
+            'player_1': str(player_1.id),
+            'player_2': str(opponent.id),
+            'game_type': 'pvp',
+            'status': 'pending',
+            'created_at': datetime.utcnow().isoformat()
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'])
+    def matchmake(self, request):
+        """Open PvP matchmaking queue (wait up to 30s on frontend)."""
+        user = request.user
+
+        active_game_id = self.redis_manager.get_active_game(user.id)
+        if active_game_id:
+            game_meta = self.redis_manager.get_game_meta(active_game_id)
+            if game_meta and game_meta.get('game_type') == 'ai':
+                # Auto-cleanup stale AI game so PvP matchmaking can proceed
+                # Record the AI game as forfeited in DB before cleaning up Redis
+                logger.info('Auto-cleaning stale AI game %s for user %s before PvP matchmake', active_game_id, user.id)
+                self._record_ai_forfeit(active_game_id, user, game_meta)
+                self.redis_manager.delete_game(active_game_id)
+                self.redis_manager.remove_active_game(user.id)
+            else:
+                return Response({
+                    'status': 'active',
+                    'game_id': active_game_id,
+                })
+
+        opponent_id = self.redis_manager.pop_pvp_opponent(user.id)
+        if opponent_id:
+            try:
+                opponent = User.objects.get(id=opponent_id)
+            except User.DoesNotExist:
+                self.redis_manager.remove_from_pvp_queue(opponent_id)
+                opponent = None
+
+            if opponent:
+                game_id = str(uuid.uuid4())
+                self.redis_manager.create_game(
+                    game_id=game_id,
+                    player_1_id=str(user.id),
+                    player_2_id=str(opponent.id),
+                    game_type='pvp',
+                    player_1_username=user.username,
+                    player_2_username=opponent.username,
+                )
+                # Game starts as 'pending' — becomes 'active' when both players place ships
+                self.redis_manager.set_active_game(user.id, game_id)
+                self.redis_manager.set_active_game(opponent.id, game_id)
+                self.redis_manager.remove_from_pvp_queue(opponent.id)
+
+                return Response({
+                    'status': 'matched',
+                    'game_id': game_id,
+                    'player_1': str(user.id),
+                    'player_2': str(opponent.id),
+                })
+
+        if not self.redis_manager.is_pvp_waiting(user.id):
+            self.redis_manager.set_pvp_waiting(user.id, ttl_seconds=30)
+            self.redis_manager.enqueue_pvp(user.id)
+
+        return Response({
+            'status': 'waiting',
+            'wait_ttl': self.redis_manager.get_pvp_wait_ttl(user.id),
+        })
+
+    @action(detail=False, methods=['post'], url_path='matchmake/cancel')
+    def matchmake_cancel(self, request):
+        """Cancel PvP matchmaking wait."""
+        user = request.user
+        self.redis_manager.remove_from_pvp_queue(user.id)
+        return Response({'status': 'cancelled'})
+
+    # ------------------------------------------------------------------
+    # Direct-invite system
+    # ------------------------------------------------------------------
+
+    @action(detail=False, methods=['get'], url_path='online-players')
+    def online_players(self, request):
+        """Return players who are online and not currently in a game."""
+        current_user = request.user
+
+        # Fetch all online user IDs from Redis
+        online_ids = self.redis_manager.get_all_online_user_ids()
+
+        # Remove ourselves, AI accounts and users in active games
+        candidate_ids = []
+        for uid in online_ids:
+            if uid == str(current_user.id):
+                continue
+            if self.redis_manager.get_active_game(uid):
+                continue
+            candidate_ids.append(uid)
+
+        if not candidate_ids:
+            return Response({'players': []})
+
+        users = User.objects.filter(
+            id__in=candidate_ids,
+            is_active=True,
+            is_staff=False,
+        ).values('id', 'username', 'display_name', 'avatar_url')
+
+        # Determine which of these players are friends
+        friend_ids = set()
+        friendships = Friendship.objects.filter(
+            Q(requester=current_user, addressee_id__in=candidate_ids) |
+            Q(addressee=current_user, requester_id__in=candidate_ids),
+            status='accepted',
+        )
+        for f in friendships:
+            friend_ids.add(str(f.requester_id))
+            friend_ids.add(str(f.addressee_id))
+        friend_ids.discard(str(current_user.id))
+
+        players = []
+        for u in users:
+            players.append({
+                'id': str(u['id']),
+                'username': u['username'],
+                'display_name': u['display_name'] or u['username'],
+                'is_friend': str(u['id']) in friend_ids,
+            })
+
+        # Friends first, then alphabetical
+        players.sort(key=lambda p: (not p['is_friend'], p['username'].lower()))
+
+        return Response({'players': players})
+
+    @action(detail=False, methods=['get'], url_path='invite/status')
+    def invite_status(self, request):
+        """Fetch the current user's active game invites, if any."""
+        current_user = request.user
+        
+        # Check if the user has a received invite
+        received_invite_id = self.redis_manager.get_user_received_invite(str(current_user.id))
+        if received_invite_id:
+            invite_data = self.redis_manager.get_invite(received_invite_id)
+            if invite_data:
+                # We need the from_username
+                try:
+                    from_user = User.objects.get(id=invite_data['from_user_id'])
+                    return Response({
+                        'type': 'received',
+                        'invite': {
+                            'inviteId': invite_data['invite_id'],
+                            'fromUserId': invite_data['from_user_id'],
+                            'fromUsername': from_user.username,
+                            'startedAt': int(float(datetime.fromisoformat(invite_data.get('created_at', datetime.utcnow().isoformat())).replace(tzinfo=dt_timezone.utc).timestamp()) * 1000)
+                        }
+                    })
+                except User.DoesNotExist:
+                    pass
+
+        # Check if the user has a sent invite
+        sent_invite_id = self.redis_manager.get_user_sent_invite(current_user.id)
+        if sent_invite_id:
+            invite_data = self.redis_manager.get_invite(sent_invite_id)
+            if invite_data:
+                # We need the target username
+                try:
+                    target_user = User.objects.get(id=invite_data['to_user_id'])
+                    return Response({
+                        'type': 'sent',
+                        'invite': {
+                            'inviteId': invite_data['invite_id'],
+                            'targetUserId': invite_data['to_user_id'],
+                            'targetUsername': target_user.username,
+                            'startedAt': int(float(datetime.fromisoformat(invite_data.get('created_at', datetime.utcnow().isoformat())).replace(tzinfo=dt_timezone.utc).timestamp()) * 1000)
+                        }
+                    })
+                except User.DoesNotExist:
+                    pass
+
+        return Response({'type': 'none'})
+
+    @action(detail=False, methods=['post'], url_path='invite')
+    def invite(self, request):
+        """Send a direct game invite to another online player."""
+        current_user = request.user
+        target_id = request.data.get('user_id')
+
+        if not target_id:
+            return Response({'error': 'user_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Guard: inviter already has a pending outgoing invite
+        if self.redis_manager.get_user_sent_invite(current_user.id):
+            return Response({'error': 'You already have a pending invite'}, status=status.HTTP_200_OK)
+
+        # Guard: inviter has a pending incoming invite they must respond to first (prevents mutual invites)
+        if self.redis_manager.get_user_received_invite(str(current_user.id)):
+            return Response({'error': 'You have a pending invite to respond to first'}, status=status.HTTP_200_OK)
+
+        # Guard: inviter already in a game
+        if self.redis_manager.get_active_game(current_user.id):
+            return Response({'error': 'You are already in a game'}, status=status.HTTP_200_OK)
+
+        try:
+            target = User.objects.get(id=target_id, is_active=True, is_staff=False)
+        except User.DoesNotExist:
+            return Response({'error': 'Player not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not self.redis_manager.is_user_online(target_id):
+            return Response({'error': 'Player is offline'}, status=status.HTTP_200_OK)
+
+        if self.redis_manager.get_active_game(target_id):
+            return Response({'error': 'Player is already in a game'}, status=status.HTTP_200_OK)
+
+        if self.redis_manager.get_user_received_invite(target_id):
+            return Response({'error': 'Player already has a pending invite'}, status=status.HTTP_200_OK)
+
+        invite_id = str(uuid.uuid4())
+        self.redis_manager.create_invite(invite_id, current_user.id, target_id)
+        self.redis_manager.set_user_sent_invite(current_user.id, invite_id)
+        self.redis_manager.set_user_received_invite(target_id, invite_id)
+
+        # Push real-time notification to target via WebSocket
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{target_id}",
+                    {
+                        'type': 'invite_received',
+                        'invite_id': invite_id,
+                        'from_user_id': str(current_user.id),
+                        'from_username': current_user.username,
+                    },
+                )
+            except Exception:
+                pass
+
+        return Response({'invite_id': invite_id, 'status': 'sent'}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='invite/cancel')
+    def invite_cancel(self, request):
+        """Cancel the current user's pending outgoing invite."""
+        current_user = request.user
+
+        invite_id = self.redis_manager.get_user_sent_invite(current_user.id)
+        if not invite_id:
+            # If there's no pending invite, it's already cancelled (idempotent)
+            return Response({'status': 'cancelled', 'note': 'No pending invite'}, status=status.HTTP_200_OK)
+
+        invite_data = self.redis_manager.get_invite(invite_id)
+        to_user_id = invite_data.get('to_user_id') if invite_data else None
+
+        self.redis_manager.delete_invite(invite_id)
+        self.redis_manager.clear_user_sent_invite(current_user.id)
+        if to_user_id:
+            self.redis_manager.clear_user_received_invite(to_user_id)
+
+        if to_user_id:
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f"user_{to_user_id}",
+                        {
+                            'type': 'invite_cancelled',
+                            'invite_id': invite_id,
+                        },
+                    )
+                except Exception:
+                    pass
+
+        return Response({'status': 'cancelled'})
+
+    @action(detail=False, methods=['post'], url_path=r'invite/(?P<invite_id>[^/.]+)/accept')
+    def invite_accept(self, request, invite_id=None):
+        """Accept a game invite and create the game."""
+        current_user = request.user
+
+        # Auto-cancel any outgoing invite from this user
+        sent_invite_id = self.redis_manager.get_user_sent_invite(current_user.id)
+        if sent_invite_id:
+            sent_invite_data = self.redis_manager.get_invite(sent_invite_id)
+            if sent_invite_data:
+                to_user_id = sent_invite_data.get('to_user_id')
+                
+                self.redis_manager.delete_invite(sent_invite_id)
+                self.redis_manager.clear_user_sent_invite(current_user.id)
+                if to_user_id:
+                    self.redis_manager.clear_user_received_invite(to_user_id)
+                    
+                    channel_layer = get_channel_layer()
+                    if channel_layer:
+                        try:
+                            async_to_sync(channel_layer.group_send)(
+                                f"user_{to_user_id}",
+                                {
+                                    'type': 'invite_cancelled',
+                                    'invite_id': sent_invite_id,
+                                },
+                            )
+                        except Exception:
+                            pass
+
+        invite_data = self.redis_manager.get_invite(invite_id)
+        if not invite_data:
+            return Response({'error': 'Invite not found or expired'}, status=status.HTTP_404_NOT_FOUND)
+
+        if str(invite_data.get('to_user_id')) != str(current_user.id):
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        from_user_id = invite_data.get('from_user_id')
+
+        # Guard against race condition: if the inviter's sent-invite key was already
+        # cleared (because they cancelled or the TTL fired), treat this as expired.
+        # This key is cleared atomically by `invite_cancel` before `delete_invite`,
+        # so this check is the safest serialisation point.
+        if self.redis_manager.get_user_sent_invite(from_user_id) != invite_id:
+            # Clean up the stale received-invite key for the acceptor
+            self.redis_manager.clear_user_received_invite(current_user.id)
+            return Response({'error': 'Invite not found or expired'}, status=status.HTTP_404_NOT_FOUND)
+
+        if self.redis_manager.get_active_game(current_user.id):
+            return Response({'error': 'You are already in a game'}, status=status.HTTP_409_CONFLICT)
+        if self.redis_manager.get_active_game(from_user_id):
+            return Response({'error': 'Inviter is already in a game'}, status=status.HTTP_409_CONFLICT)
+
+        try:
+            from_user = User.objects.get(id=from_user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'Inviter not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        game_id = str(uuid.uuid4())
+        self.redis_manager.create_game(
+            game_id=game_id,
+            player_1_id=str(from_user.id),
+            player_2_id=str(current_user.id),
+            game_type='pvp',
+            player_1_username=from_user.username,
+            player_2_username=current_user.username,
+        )
+        self.redis_manager.set_active_game(from_user.id, game_id)
+        self.redis_manager.set_active_game(current_user.id, game_id)
+
+        # Clean up invite state
+        self.redis_manager.delete_invite(invite_id)
+        self.redis_manager.clear_user_sent_invite(from_user_id)
+        self.redis_manager.clear_user_received_invite(current_user.id)
+
+        # Notify inviter via WebSocket
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{from_user_id}",
+                    {
+                        'type': 'invite_accepted',
+                        'invite_id': invite_id,
+                        'game_id': game_id,
+                        'by_username': current_user.username,
+                    },
+                )
+            except Exception:
+                pass
+
+        # Auto-reject any incoming invite for the inviter (since they are now in a game)
+        p1_received_invite_id = self.redis_manager.get_user_received_invite(from_user_id)
+        if p1_received_invite_id:
+            p1_received_invite_data = self.redis_manager.get_invite(p1_received_invite_id)
+            if p1_received_invite_data:
+                p3_id = p1_received_invite_data.get('from_user_id')
+                self.redis_manager.delete_invite(p1_received_invite_id)
+                self.redis_manager.clear_user_received_invite(from_user_id)
+                if p3_id:
+                    self.redis_manager.clear_user_sent_invite(p3_id)
+                    if channel_layer:
+                        try:
+                            async_to_sync(channel_layer.group_send)(
+                                f"user_{p3_id}",
+                                {
+                                    'type': 'invite_rejected',
+                                    'invite_id': p1_received_invite_id,
+                                    'by_username': from_user.username,
+                                },
+                            )
+                        except Exception:
+                            pass
+
+        return Response({'status': 'accepted', 'game_id': game_id})
+
+    @action(detail=False, methods=['post'], url_path=r'invite/(?P<invite_id>[^/.]+)/reject')
+    def invite_reject(self, request, invite_id=None):
+        """Reject a game invite."""
+        current_user = request.user
+
+        invite_data = self.redis_manager.get_invite(invite_id)
+        if not invite_data:
+            # Idempotent rejection: if it doesn't exist, treat as already rejected
+            return Response({'status': 'rejected', 'note': 'Invite not found or expired'}, status=status.HTTP_200_OK)
+
+        if str(invite_data.get('to_user_id')) != str(current_user.id):
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        from_user_id = invite_data.get('from_user_id')
+
+        self.redis_manager.delete_invite(invite_id)
+        if from_user_id:
+            self.redis_manager.clear_user_sent_invite(from_user_id)
+        self.redis_manager.clear_user_received_invite(current_user.id)
+
+        if from_user_id:
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f"user_{from_user_id}",
+                        {
+                            'type': 'invite_rejected',
+                            'invite_id': invite_id,
+                            'by_username': current_user.username,
+                        },
+                    )
+                except Exception:
+                    pass
+
+        return Response({'status': 'rejected'})
 
     def _extract_ai_ships(self, ai_board):
         """Extract AI ship positions from generated board."""
@@ -498,44 +956,53 @@ class GameViewSet(viewsets.ModelViewSet):
             ai_user.set_unusable_password()
             ai_user.save()
         
-        game = Game.objects.create(
-            player_1=player_1,
-            player_2=ai_user,  # Set player_2 to AI user instead of None
-            game_type='ai',
-            status='pending'
-        )
+        # Generate ID
+        game_id = str(uuid.uuid4())
         
         # Initialize AI game state in Redis
         self.redis_manager.create_game(
-            game_id=str(game.id),
+            game_id=game_id,
             player_1_id=str(player_1.id),
             player_2_id=str(ai_user.id),
-            game_type='ai'
+            game_type='ai',
+            player_1_username=player_1.username,
+            player_2_username=ai_user.username
         )
+        
+        # Set active game for player (AI doesn't need active game check)
+        self.redis_manager.set_active_game(player_1.id, game_id)
         
         # Generate AI's initial board and ships
         ai_board = self.ai_opponent.generate_initial_board()
-        self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
+        self.redis_manager.set_board_state(game_id, 'ai', ai_board)
         
         ai_ships = self._extract_ai_ships(ai_board)
         if not ai_ships:
             logger.error(f"Failed to extract AI ship positions from board: {ai_board}")
+            # Clean up
+            self.redis_manager.delete_game(game_id)
+            self.redis_manager.remove_active_game(player_1.id)
             return Response(
                 {'error': 'Failed to initialize AI opponent'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-        self.redis_manager.set_ships(str(game.id), 'player_2', ai_ships)
+        self.redis_manager.set_ships(game_id, 'player_2', ai_ships)
         
-        serializer = self.get_serializer(game)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response({
+            'id': game_id,
+            'player_1': str(player_1.id),
+            'player_2': str(ai_user.id),
+            'game_type': 'ai',
+            'status': 'pending',
+            'created_at': datetime.utcnow().isoformat()
+        }, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])
     def accept(self, request, id=None):
         """Accept a game invitation."""
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
@@ -544,134 +1011,236 @@ class GameViewSet(viewsets.ModelViewSet):
         user = request.user
         
         # Verify user is player_2
-        if game.player_2_id != user.id:
+        # Redis stores IDs as strings, so compare as strings
+        if game_meta.get('player_2_id') != str(user.id):
             return Response(
                 {'error': 'Only the invited player can accept'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         # Verify game is pending
-        if game.status != 'pending':
+        if game_meta.get('status') != 'pending':
             return Response(
                 {'error': 'Game is not pending'},
                 status=status.HTTP_409_CONFLICT
             )
         
-        # Update game status
-        game.status = 'active'
-        game.save(update_fields=['status'])
+        # Update Redis game status
+        self.redis_manager.set_game_status(id, 'active')
+        self.redis_manager.set_current_turn(id, game_meta.get('player_1_id'))
         
-        # Update Redis game state
-        self.redis_manager.set_game_status(str(game.id), 'active')
-        self.redis_manager.set_current_turn(str(game.id), str(game.player_1_id))
-        
-        serializer = self.get_serializer(game)
-        return Response(serializer.data)
+        # Update metadata in response
+        game_meta['status'] = 'active'
+        return Response({
+            'id': game_meta.get('game_id'),
+            'player_1': game_meta.get('player_1_id'),
+            'player_2': game_meta.get('player_2_id'),
+            'game_type': game_meta.get('game_type'),
+            'status': 'active',
+            'created_at': game_meta.get('created_at')
+        })
     
     @action(detail=True, methods=['post'])
     def decline(self, request, id=None):
         """Decline a game invitation."""
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
-                {'error': 'Game not found'},
-                status=status.HTTP_404_NOT_FOUND
+                {'status': 'declined', 'note': 'Game not found'},
+                status=status.HTTP_200_OK
             )
         
         user = request.user
         
         # Verify user is player_2
-        if game.player_2_id != user.id:
+        if game_meta.get('player_2_id') != str(user.id):
             return Response(
                 {'error': 'Only the invited player can decline'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         # Verify game is pending
-        if game.status != 'pending':
+        if game_meta.get('status') != 'pending':
             return Response(
                 {'error': 'Game is not pending'},
                 status=status.HTTP_409_CONFLICT
             )
         
         # Delete game and Redis state
-        self.redis_manager.delete_game(str(game.id))
-        game.delete()
+        self.redis_manager.delete_game(id)
+        self.redis_manager.remove_active_game(game_meta.get('player_1_id'))
+        self.redis_manager.remove_active_game(user.id)
         
         return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=['post'])
     def forfeit(self, request, id=None):
         """Forfeit the game."""
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         # Verify game is active
-        if game.status != 'active':
+        if game_meta.get('status') != 'active':
             return Response(
                 {'error': 'Game is not active'},
                 status=status.HTTP_409_CONFLICT
             )
         
         # Determine winner (opponent)
-        winner = game.player_2 if game.player_1_id == user.id else game.player_1
+        winner_id = player_2_id if str(user.id) == player_1_id else player_1_id
         
-        # End game
-        game.status = 'forfeited'
-        game.winner = winner
-        game.ended_at = timezone.now()
-        game.duration_seconds = int((game.ended_at - game.started_at).total_seconds())
+        try:
+            player_1 = User.objects.get(id=player_1_id)
+            player_2 = User.objects.get(id=player_2_id) if player_2_id else None
+            winner = User.objects.get(id=winner_id) if winner_id else None
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Get stats from Redis
+        shots_p1 = self.redis_manager.get_shots(id, 'player_1')
+        shots_p2 = self.redis_manager.get_shots(id, 'player_2')
+        
+        def summarize(shots):
+            total = len(shots)
+            hits = sum(1 for shot in shots if shot.get('result') == 'hit')
+            return total, hits
+
+        p1_shots, p1_hits = summarize(shots_p1)
+        p2_shots, p2_hits = summarize(shots_p2)
+        
+        # Parse created_at as timezone-aware datetime
+        started_at_dt = timezone.now()
+        created_at_str = game_meta.get('created_at')
+        if created_at_str:
+            try:
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                started_at_dt = start_time
+            except (ValueError, TypeError):
+                logger.warning(
+                    "Invalid created_at value for game %s: %r; using default start time.",
+                    id,
+                    created_at_str,
+                )
+        
+        # Create completed game record in DB
+        game = Game.objects.create(
+            id=id,
+            player_1=player_1,
+            player_2=player_2,
+            game_type=game_meta.get('game_type'),
+            status='forfeited',
+            winner=winner,
+            started_at=started_at_dt,
+            ended_at=timezone.now(),
+            player_1_shots=p1_shots,
+            player_1_hits=p1_hits,
+            player_2_shots=p2_shots,
+            player_2_hits=p2_hits
+        )
+        
+        # Calculate duration
+        try:
+            created_at_str = game_meta.get('created_at')
+            if created_at_str:
+                # Redis stores naive UTC datetime (no Z suffix), parse and make timezone-aware
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                ended_at = game.ended_at
+                if ended_at.tzinfo is None:
+                    ended_at = ended_at.replace(tzinfo=dt_timezone.utc)
+                game.duration_seconds = int((ended_at - start_time).total_seconds())
+        except (ValueError, TypeError, AttributeError):
+            game.duration_seconds = 0
         game.save()
         
         # Update player stats
         self._update_player_stats(game)
         
-        # Update Redis
-        self.redis_manager.end_game(str(game.id))
+        # Cleanup Redis
+        self.redis_manager.delete_game(id)
+        self.redis_manager.remove_active_game(player_1_id)
+        if player_2_id:
+            self.redis_manager.remove_active_game(player_2_id)
         
         serializer = self.get_serializer(game)
         return Response(serializer.data)
     
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, id=None):
+        """Cancel a pending PvP game (called when either player leaves during ship placement)."""
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
+            return Response({'status': 'cancelled', 'note': 'Game not found'}, status=status.HTTP_200_OK)
+
+        user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
+
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
+            return Response({'error': 'User not in this game'}, status=status.HTTP_403_FORBIDDEN)
+
+        if game_meta.get('status') != 'pending':
+            return Response({'error': 'Only pending games can be cancelled'}, status=status.HTTP_409_CONFLICT)
+
+        # Remove from Redis
+        self.redis_manager.delete_game(id)
+        self.redis_manager.remove_active_game(player_1_id)
+        if player_2_id:
+            self.redis_manager.remove_active_game(player_2_id)
+        self.redis_manager.clear_placement_timer_start(id)
+
+        # Notify both players so the other side can redirect to menu
+        self._notify_game_cancelled(id, reason='player_left')
+
+        return Response({'status': 'cancelled'})
+
     @action(detail=True, methods=['post'])
     def end_game(self, request, id=None):
         """End a game and save the results.
         
         Called by frontend when game naturally ends (all ships sunk).
         """
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         # Verify game is active
-        if game.status != 'active':
+        if game_meta.get('status') != 'active':
             return Response(
                 {'error': 'Game is not active'},
                 status=status.HTTP_409_CONFLICT
@@ -684,84 +1253,133 @@ class GameViewSet(viewsets.ModelViewSet):
         winner_id = serializer.validated_data['winner_id']
         
         # Verify winner is one of the players
-        if winner_id != game.player_1_id and winner_id != game.player_2_id:
+        # winner_id from serializer is UUID, player_ids in Redis are strings
+        if str(winner_id) != player_1_id and str(winner_id) != player_2_id:
             return Response(
                 {'error': 'Invalid winner'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
+            player_1 = User.objects.get(id=player_1_id)
+            player_2 = User.objects.get(id=player_2_id) if player_2_id else None
             winner = User.objects.get(id=winner_id)
         except User.DoesNotExist:
             return Response(
-                {'error': 'Winner not found'},
+                {'error': 'User not found'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+            
+        # Get stats from Redis (trust Redis for accuracy over frontend provided stats if possible, 
+        # but let's usage serializer data to match original logic or double check)
+        # The original logic used serializer data for shots/hits. 
+        # But we have authoritative data in Redis. Let's use Redis data for consistency.
         
-        # Update game with results
-        game.status = 'completed'
-        game.winner = winner
-        game.ended_at = timezone.now()
-        game.duration_seconds = int((game.ended_at - game.started_at).total_seconds())
-        game.player_1_shots = serializer.validated_data['player_1_shots']
-        game.player_1_hits = serializer.validated_data['player_1_hits']
-        game.player_2_shots = serializer.validated_data['player_2_shots']
-        game.player_2_hits = serializer.validated_data['player_2_hits']
+        shots_p1 = self.redis_manager.get_shots(id, 'player_1')
+        shots_p2 = self.redis_manager.get_shots(id, 'player_2')
+        
+        def summarize(shots):
+            total = len(shots)
+            hits = sum(1 for shot in shots if shot.get('result') == 'hit')
+            return total, hits
+
+        p1_shots, p1_hits = summarize(shots_p1)
+        p2_shots, p2_hits = summarize(shots_p2)
+        
+        # Parse created_at as timezone-aware datetime
+        started_at_dt = timezone.now()
+        created_at_str = game_meta.get('created_at')
+        if created_at_str:
+            try:
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                started_at_dt = start_time
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "Invalid created_at value '%s' for game %s; using default start time. Error: %s",
+                    created_at_str,
+                    id,
+                    exc,
+                )
+        
+        # Create completed game record in DB
+        game = Game.objects.create(
+            id=id,
+            player_1=player_1,
+            player_2=player_2,
+            game_type=game_meta.get('game_type'),
+            status='completed',
+            winner=winner,
+            started_at=started_at_dt,
+            ended_at=timezone.now(),
+            player_1_shots=p1_shots,
+            player_1_hits=p1_hits,
+            player_2_shots=p2_shots,
+            player_2_hits=p2_hits
+        )
+        
+        # Calculate duration
+        try:
+            created_at_str = game_meta.get('created_at')
+            if created_at_str:
+                # Redis stores naive UTC datetime (no Z suffix), parse and make timezone-aware
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                ended_at = game.ended_at
+                if ended_at.tzinfo is None:
+                    ended_at = ended_at.replace(tzinfo=dt_timezone.utc)
+                game.duration_seconds = int((ended_at - start_time).total_seconds())
+        except (ValueError, TypeError, AttributeError):
+            game.duration_seconds = 0
         game.save()
         
         # Update player stats
         self._update_player_stats(game)
         
-        # Update Redis
-        self.redis_manager.end_game(str(game.id))
+        # Cleanup Redis
+        self.redis_manager.delete_game(id)
+        self.redis_manager.remove_active_game(player_1_id)
+        if player_2_id:
+            self.redis_manager.remove_active_game(player_2_id)
         
         response_serializer = self.get_serializer(game)
         return Response(response_serializer.data)
     
     @action(detail=True, methods=['post'])
     def ships(self, request, id=None):
-        """Place ships during setup phase (before game starts).
-        
-        Request body:
-        {
-            "ship_type": "battleship",
-            "positions": [
-                {"x": 0, "y": 0},
-                {"x": 1, "y": 0},
-                {"x": 2, "y": 0},
-                {"x": 3, "y": 0}
-            ]
-        }
-        """
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        """Place ships during setup phase (before game starts)."""
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Ship placement only allowed in pending or active status before gameplay starts
-        # (In real implementation, add a 'setup_complete' flag to track when both players placed ships)
-        if game.status not in ['pending', 'active']:
+        # Ship placement only allowed in pending or active status
+        status_val = game_meta.get('status')
+        if status_val not in ['pending', 'active']:
             return Response(
                 {'error': 'Game is not in setup phase'},
                 status=status.HTTP_409_CONFLICT
             )
         
-        player_key = 'player_1' if game.player_1_id == user.id else 'player_2'
+        player_key = 'player_1' if str(user.id) == player_1_id else 'player_2'
         
         # Check if player has already placed ships
-        existing_ships = self.redis_manager.get_ships(str(game.id), player_key)
+        existing_ships = self.redis_manager.get_ships(id, player_key)
         if existing_ships:
             return Response(
                 {'error': 'Ships already placed for this player'},
@@ -797,131 +1415,153 @@ class GameViewSet(viewsets.ModelViewSet):
         # Store ships in Redis
         ship_data = {'type': ship_type, 'positions': positions}
         
-        self.redis_manager.set_ships(
-            str(game.id),
-            player_key,
-            ship_data
-        )
-
+        self.redis_manager.set_ships(id, player_key, ship_data)
+        
         # For AI games: start game when player_1 finishes ship placement
-        if game.game_type == 'ai' and game.status == 'pending' and player_key == 'player_1':
+        if game_meta.get('game_type') == 'ai' and game_meta.get('status') == 'pending' and player_key == 'player_1':
             # Ensure AI ships exist before activating the game
-            ai_ships = self.redis_manager.get_ships(str(game.id), 'player_2')
+            ai_ships = self.redis_manager.get_ships(id, 'player_2')
             if not ai_ships or not ai_ships.get('positions'):
-                ai_board = self.ai_opponent.generate_initial_board()
-                self.redis_manager.set_board_state(str(game.id), 'ai', ai_board)
-                ai_ships = self._extract_ai_ships(ai_board)
-                if not ai_ships:
-                    logger.error(f"AI ships not initialized for game {game.id}; cannot start AI game.")
+                try:
+                    ai_board = self.ai_opponent.generate_initial_board()
+                    self.redis_manager.set_board_state(id, 'ai', ai_board)
+                    
+                    # We need _extract_ai_ships or similar helper.
+                    # Assuming self._extract_ai_ships exists in the class.
+                    ai_ships = self._extract_ai_ships(ai_board)
+                    if not ai_ships:
+                         raise ValueError("Failed to extract AI ships")
+                    self.redis_manager.set_ships(id, 'player_2', ai_ships)
+                except Exception as e:
+                    logger.error(f"AI initialization failed for game {id}: {e}")
                     return Response(
-                        {'error': 'AI opponent is not ready. Please try again.'},
+                        {'error': 'AI opponent failed to initialize. Please try again.'},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
-                self.redis_manager.set_ships(str(game.id), 'player_2', ai_ships)
-            game.status = 'active'
-            game.started_at = timezone.now()
-            game.save(update_fields=['status', 'started_at'])
-
-            # Update Redis game state
-            self.redis_manager.set_game_status(str(game.id), 'active')
-            self.redis_manager.set_current_turn(str(game.id), str(game.player_1_id))
+            
+            # Update Redis game status
+            self.redis_manager.set_game_status(id, 'active')
+            self.redis_manager.set_current_turn(id, game_meta.get('player_1_id'))
         
-        # Verify ships were stored successfully
-        stored = self.redis_manager.get_ships(str(game.id), player_key)
-        if not stored or stored.get('positions') != ship_data.get('positions'):
-            logger.error(f"Failed to verify ship storage for game {game.id}, player {player_key}")
-            return Response(
-                {'error': 'Failed to store ship data'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        
-        return Response({'status': 'Ships placed successfully'})
+        # For PvP games: activate when BOTH players have placed ships
+        elif game_meta.get('game_type') == 'pvp' and game_meta.get('status') == 'pending':
+            other_key = 'player_2' if player_key == 'player_1' else 'player_1'
+            other_ships = self.redis_manager.get_ships(id, other_key)
+            if other_ships and other_ships.get('positions'):
+                # Both players ready — activate game, player_1 goes first
+                first_player_id = game_meta.get('player_1_id')
+                self.redis_manager.set_game_status(id, 'active')
+                self.redis_manager.set_current_turn(id, first_player_id)
+                self.redis_manager.clear_placement_timer_start(id)
+                # Broadcast game_start to both players via WebSocket
+                try:
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f"game_{id}",
+                        {'type': 'game_start', 'starting_player_id': first_player_id}
+                    )
+                except Exception as e:
+                    logger.warning('Failed to send game_start WS event for game %s: %s', id, e)
+                return Response({'status': 'ships_placed', 'game_started': True, 'starting_player_id': first_player_id})
+            else:
+                # First player to place — start the 60-second placement timer
+                existing_timer = self.redis_manager.get_placement_timer_start(id)
+                if not existing_timer:
+                    self.redis_manager.set_placement_timer_start(id, time.time())
+                    other_player_id = game_meta.get(f'{other_key}_id')
+                    try:
+                        channel_layer = get_channel_layer()
+                        async_to_sync(channel_layer.group_send)(
+                            f"game_{id}",
+                            {
+                                'type': 'placement_timer_start',
+                                'seconds': 60,
+                                'waiting_for_player_id': other_player_id,
+                                'placed_by_player_id': str(user.id),
+                            }
+                        )
+                    except Exception:
+                        pass
+                    return Response({'status': 'ships_placed', 'timer_seconds': 60})
+                else:
+                    elapsed = time.time() - existing_timer
+                    remaining = max(0, int(60 - elapsed))
+                    return Response({'status': 'ships_placed', 'timer_seconds': remaining})
+            
+        return Response({'status': 'ships_placed'})
     
     @action(detail=True, methods=['get'])
     def ships_status(self, request, id=None):
-        """Get ship placement status for both players.
-        
-        Response:
-        {
-            "player_1_ready": true/false,
-            "player_2_ready": true/false,
-            "both_ready": true/false,
-            "player_1_ships": {...} or null,
-            "player_2_ships": {...} or null
-        }
-        """
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        """Get ship placement status for both players."""
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
+        game_type = game_meta.get('game_type')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        player_1_ships = self.redis_manager.get_ships(str(game.id), 'player_1')
-        player_2_ships = self.redis_manager.get_ships(str(game.id), 'player_2')
+        player_1_ships = self.redis_manager.get_ships(id, 'player_1')
+        player_2_ships = self.redis_manager.get_ships(id, 'player_2')
         
         # For AI games, player_2 ships are automatically placed
         player_1_ready = player_1_ships is not None
-        player_2_ready = player_2_ships is not None or game.game_type == 'ai'
+        player_2_ready = player_2_ships is not None or game_type == 'ai'
         
+        # Include remaining placement timer so the waiting player can show a countdown
+        timer_start = self.redis_manager.get_placement_timer_start(id)
+        placement_timer_remaining = None
+        if timer_start is not None:
+            elapsed = time.time() - timer_start
+            placement_timer_remaining = max(0, int(60 - elapsed))
+
         return Response({
             'player_1_ready': player_1_ready,
             'player_2_ready': player_2_ready,
             'both_ready': player_1_ready and player_2_ready,
             'player_1_ships': player_1_ships,
-            'player_2_ships': player_2_ships if game.game_type != 'ai' else None  # Don't expose AI ships
+            'player_2_ships': player_2_ships if game_type != 'ai' else None,  # Don't expose AI ships
+            'placement_timer_remaining': placement_timer_remaining,
         })
 
     @action(detail=True, methods=['get'])
     def shots(self, request, id=None):
-        """Get shot history for a game, sorted by timestamp.
-        
-        Returns:
-        {
-            "player_1_shots": [
-                {"row": 0, "col": 5, "result": "hit", "timestamp": "2026-02-05T14:30:00Z", "sunk": false}
-            ],
-            "player_2_shots": [
-                {"row": 3, "col": 2, "result": "miss", "timestamp": "2026-02-05T14:30:01Z", "sunk": false}
-            ],
-            "player_1_inactive": [{"row": 1, "col": 5}, ...],
-            "player_2_inactive": [{"row": 2, "col": 3}, ...],
-            "current_turn": "player_1_id" or "player_2_id"
-        }
-        """
-        try:
-            game = Game.objects.get(id=id)
-        except Game.DoesNotExist:
+        """Get shot history for a game, sorted by timestamp."""
+        game_meta = self.redis_manager.get_game_meta(id)
+        if not game_meta:
             return Response(
                 {'error': 'Game not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         user = request.user
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
         
         # Verify user is in the game
-        if game.player_1_id != user.id and game.player_2_id != user.id:
+        if str(user.id) != player_1_id and str(user.id) != player_2_id:
             return Response(
                 {'error': 'User not in this game'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        redis_manager = GameStateManager()
-        player_1_shots = redis_manager.get_shots(str(game.id), 'player_1') or []
-        player_2_shots = redis_manager.get_shots(str(game.id), 'player_2') or []
-        player_1_inactive = redis_manager.get_inactive_cells(str(game.id), 'player_1') or []
-        player_2_inactive = redis_manager.get_inactive_cells(str(game.id), 'player_2') or []
-        current_turn = redis_manager.get_current_turn(str(game.id))
+        player_1_shots = self.redis_manager.get_shots(id, 'player_1') or []
+        player_2_shots = self.redis_manager.get_shots(id, 'player_2') or []
+        player_1_inactive = self.redis_manager.get_inactive_cells(id, 'player_1') or []
+        player_2_inactive = self.redis_manager.get_inactive_cells(id, 'player_2') or []
+        current_turn = self.redis_manager.get_current_turn(id)
+        chat_messages = self.redis_manager.get_chat_messages(id) or []
         
         # Sort shots by timestamp (Redis returns in reverse order)
         def sort_by_timestamp(shots):
@@ -932,7 +1572,8 @@ class GameViewSet(viewsets.ModelViewSet):
             'player_2_shots': sort_by_timestamp(player_2_shots),
             'player_1_inactive': player_1_inactive,
             'player_2_inactive': player_2_inactive,
-            'current_turn': current_turn
+            'current_turn': current_turn,
+            'chat_messages': chat_messages
         })
 
     @action(detail=False, methods=['get'])
@@ -980,8 +1621,11 @@ class GameViewSet(viewsets.ModelViewSet):
         # Update player stats
         self._update_player_stats(game)
         
-        # Update Redis
+        # Update Redis — mark game done and release active-game slots
         self.redis_manager.end_game(str(game.id))
+        self.redis_manager.remove_active_game(str(game.player_1_id))
+        if game.player_2_id:
+            self.redis_manager.remove_active_game(str(game.player_2_id))
         
         serializer = self.get_serializer(game)
         return Response(serializer.data)
@@ -1071,3 +1715,88 @@ class GameViewSet(viewsets.ModelViewSet):
                 player_1_stats.accuracy_percentage = (player_1_stats.total_hits / player_1_stats.total_shots) * 100
             
             player_1_stats.save()
+    
+    def _record_ai_forfeit(self, game_id, user, game_meta):
+        """Record an AI game as forfeited in the DB before Redis cleanup.
+        
+        Called when the player starts PvP matchmaking while an AI game is active.
+        The player forfeits the AI game (AI wins).
+        """
+        from game.models import Game, PlayerStats
+        
+        # Don't double-record
+        if Game.objects.filter(id=game_id).exists():
+            return
+        
+        player_1_id = game_meta.get('player_1_id')
+        created_at_str = game_meta.get('created_at')
+        
+        # Get shot stats from Redis before deletion
+        shots_p1 = self.redis_manager.get_shots(game_id, 'player_1')
+        shots_p2 = self.redis_manager.get_shots(game_id, 'player_2')
+        
+        def summarize(shots):
+            total = len(shots)
+            hits = sum(1 for shot in shots if shot.get('result') == 'hit')
+            return total, hits
+        
+        p1_shots, p1_hits = summarize(shots_p1)
+        p2_shots, p2_hits = summarize(shots_p2)
+        
+        started_at_dt = timezone.now()
+        if created_at_str:
+            try:
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                started_at_dt = start_time
+            except (ValueError, TypeError):
+                pass
+        
+        try:
+            game = Game.objects.create(
+                id=game_id,
+                player_1=user,
+                player_2=None,
+                game_type='ai',
+                status='forfeited',
+                winner=None,  # AI wins but AI has no user record
+                started_at=started_at_dt,
+                ended_at=timezone.now(),
+                player_1_shots=p1_shots,
+                player_1_hits=p1_hits,
+                player_2_shots=p2_shots,
+                player_2_hits=p2_hits,
+            )
+            
+            # Calculate duration
+            if created_at_str:
+                try:
+                    start_time = datetime.fromisoformat(created_at_str)
+                    if start_time.tzinfo is None:
+                        start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                    ended_at = game.ended_at
+                    if ended_at.tzinfo is None:
+                        ended_at = ended_at.replace(tzinfo=dt_timezone.utc)
+                    game.duration_seconds = int((ended_at - start_time).total_seconds())
+                    game.save()
+                except (ValueError, TypeError):
+                    pass
+            
+            # Update player stats - count as a loss for the player
+            try:
+                stats = PlayerStats.objects.get(user_id=user.id)
+            except PlayerStats.DoesNotExist:
+                stats = PlayerStats.objects.create(user_id=user.id)
+            
+            stats.games_played += 1
+            stats.games_lost += 1
+            stats.current_win_streak = 0
+            stats.total_shots += p1_shots
+            stats.total_hits += p1_hits
+            if stats.total_shots > 0:
+                stats.accuracy_percentage = (stats.total_hits / stats.total_shots) * 100
+            stats.save()
+            
+        except Exception as e:
+            logger.warning('Failed to record AI forfeit for game %s: %s', game_id, e)

@@ -1,6 +1,7 @@
 /**
  * WebSocket client for real-time game communication
  */
+import API_BASE_URL from '../config';
 
 class GameSocket {
   constructor() {
@@ -12,6 +13,7 @@ class GameSocket {
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 3000;
     this.heartbeatInterval = null;
+    this._gameEnded = false; // Flag to prevent reconnection after game ends
   }
 
   /**
@@ -23,13 +25,13 @@ class GameSocket {
    */
   connect(gameId, onConnect, onError, options = {}) {
     const { silent = false } = options;
-    
+
     // If game ID changed, close old socket and create new one
     if (this.gameId && this.gameId !== gameId && this.socket) {
       this.socket.close();
       this.socket = null;
     }
-    
+
     // If already connected or connecting to this game, handle appropriately
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       if (this.socket.readyState === WebSocket.OPEN) {
@@ -47,19 +49,27 @@ class GameSocket {
 
     this.gameId = gameId;
     this.pendingGameId = null;
-    // Use relative WebSocket URL that works through nginx proxy
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/games/`;
+
+    // Construct WebSocket URL from API_BASE_URL so it perfectly matches the connection setup
+    // e.g. "https://localhost:8080/api" -> "wss://localhost:8080/ws/games/"
+    let wsUrl = API_BASE_URL.replace('/api', '/ws/games/');
+    if (wsUrl.startsWith('http')) {
+      wsUrl = wsUrl.replace('http', 'ws');
+    } else if (wsUrl.startsWith('/')) {
+      // Relative URL fallback
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname === 'localhost' && window.location.port === '3000'
+        ? 'localhost:8000'
+        : window.location.host;
+      wsUrl = `${protocol}//${host}${wsUrl}`;
+    }
 
     try {
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
-        if (!silent) {
-          console.log('[SOCKET] Connected');
-        }
         this.reconnectAttempts = 0;
-        
+
         // Send join message for the requested game
         this.send({
           type: 'join',
@@ -75,10 +85,23 @@ class GameSocket {
       this.socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
-          // Route to specific handler
-          if (this.messageHandlers[data.type]) {
-            this.messageHandlers[data.type](data);
+
+          if (data.type === 'force_logout') {
+            console.warn("Received force_logout signal from server");
+            window.dispatchEvent(new Event('auth_error'));
+            return;
+          }
+
+          // Route to handlers for this message type
+          const handlers = this.messageHandlers[data.type];
+          if (handlers) {
+            handlers.forEach((handler) => {
+              try {
+                handler(data);
+              } catch (err) {
+                // Silently ignore handler errors to avoid breaking other subscribers
+              }
+            });
           }
         } catch (err) {
           // Silently handle parse errors
@@ -93,9 +116,9 @@ class GameSocket {
 
       this.socket.onclose = () => {
         this.stopHeartbeat();
-        
-        // Attempt reconnect only if we haven't exceeded max attempts
-        if (this.reconnectAttempts < this.maxReconnectAttempts && gameId) {
+
+        // Attempt reconnect only if game is active and we haven't exceeded max attempts
+        if (this.reconnectAttempts < this.maxReconnectAttempts && gameId && !this._gameEnded) {
           this.reconnectAttempts++;
           setTimeout(() => {
             this.connect(gameId, onConnect, onError, options);
@@ -117,8 +140,17 @@ class GameSocket {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/games/`;
+    // Construct WebSocket URL identically to connect method
+    let wsUrl = API_BASE_URL.replace('/api', '/ws/games/');
+    if (wsUrl.startsWith('http')) {
+      wsUrl = wsUrl.replace('http', 'ws');
+    } else if (wsUrl.startsWith('/')) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname === 'localhost' && window.location.port === '3000'
+        ? 'localhost:8000'
+        : window.location.host;
+      wsUrl = `${protocol}//${host}${wsUrl}`;
+    }
 
     try {
       this.socket = new WebSocket(wsUrl);
@@ -141,9 +173,21 @@ class GameSocket {
       this.socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          const handler = this.messageHandlers[data.type];
-          if (handler) {
-            handler(data);
+
+          if (data.type === 'force_logout') {
+            window.dispatchEvent(new Event('auth_error'));
+            return;
+          }
+
+          const handlers = this.messageHandlers[data.type];
+          if (handlers) {
+            handlers.forEach((handler) => {
+              try {
+                handler(data);
+              } catch (err) {
+                // Silently ignore handler errors to avoid breaking other subscribers
+              }
+            });
           }
         } catch (err) {
           // Silently ignore parse errors
@@ -169,15 +213,32 @@ class GameSocket {
    * @param {function} handler - Function to call when message is received
    */
   on(messageType, handler) {
-    this.messageHandlers[messageType] = handler;
+    if (!this.messageHandlers[messageType]) {
+      this.messageHandlers[messageType] = new Set();
+    }
+    this.messageHandlers[messageType].add(handler);
   }
 
   /**
    * Remove a message handler
    * @param {string} messageType - Type of message
+   * @param {function} handler - Optional specific handler to remove
    */
-  off(messageType) {
-    delete this.messageHandlers[messageType];
+  off(messageType, handler) {
+    const handlers = this.messageHandlers[messageType];
+    if (!handlers) {
+      return;
+    }
+
+    if (!handler) {
+      delete this.messageHandlers[messageType];
+      return;
+    }
+
+    handlers.delete(handler);
+    if (handlers.size === 0) {
+      delete this.messageHandlers[messageType];
+    }
   }
 
   /**
@@ -247,14 +308,54 @@ class GameSocket {
   }
 
   /**
-   * Close the connection
+   * Send a chat message
+   * @param {string} message - Chat message text
+   */
+  sendChat(message) {
+    return this.send({
+      type: 'chat_message',
+      message,
+    });
+  }
+
+  /**
+   * Close the connection and mark game as ended (stops reconnection)
    */
   disconnect() {
+    this._gameEnded = true; // Prevent reconnection attempts
     this.stopHeartbeat();
     if (this.socket) {
-      this.socket.close();
-      this.socket = null;
+      try {
+        // Clear handlers to avoid callbacks during teardown
+        this.socket.onopen = null;
+        this.socket.onmessage = null;
+        this.socket.onerror = null;
+        this.socket.onclose = null;
+
+        // Always attempt to close CONNECTING or OPEN sockets to avoid leaks
+        if (
+          this.socket.readyState === WebSocket.CONNECTING ||
+          this.socket.readyState === WebSocket.OPEN
+        ) {
+          this.socket.close();
+        }
+      } finally {
+        this.socket = null;
+      }
     }
+    this.gameId = null;
+    this.pendingGameId = null;
+    this.reconnectAttempts = 0;
+  }
+
+  /**
+   * Reset socket state for a new game (clears game ended flag)
+   */
+  reset() {
+    this._gameEnded = false;
+    this.gameId = null;
+    this.pendingGameId = null;
+    this.reconnectAttempts = 0;
   }
 
   /**

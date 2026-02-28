@@ -1,3 +1,5 @@
+import API_BASE_URL from '../config';
+
 /**
  * CSRF Token Utility
  * 
@@ -11,7 +13,7 @@
 export function getCsrfToken() {
   const name = 'csrftoken';
   let cookieValue = null;
-  
+
   if (document.cookie && document.cookie !== '') {
     const cookies = document.cookie.split(';');
     for (let i = 0; i < cookies.length; i++) {
@@ -22,9 +24,11 @@ export function getCsrfToken() {
       }
     }
   }
-  
+
   return cookieValue;
 }
+
+
 
 /**
  * Fetch CSRF token from backend endpoint
@@ -32,24 +36,14 @@ export function getCsrfToken() {
  * @returns {Promise<void>}
  */
 export async function fetchCsrfToken() {
-  const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/me/`, {
+    const response = await fetch(`${API_BASE_URL}/auth/csrf/`, {
       method: 'GET',
       credentials: 'include',
     });
-
-    // If the user is not authenticated, fall back to a public CSRF endpoint
-    if (response.status === 401 || response.status === 403) {
-      try {
-        await fetch(`${API_BASE_URL}/csrf/`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-      } catch (publicError) {
-        console.error('Failed to fetch CSRF token from public endpoint:', publicError);
-      }
+    if (response.status !== 200) {
+      console.warn('Failed to fetch CSRF token');
     }
   } catch (error) {
     console.error('Failed to fetch CSRF token from authenticated endpoint:', error);

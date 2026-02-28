@@ -1,7 +1,8 @@
 import asyncio
 import json
 import random
-from datetime import datetime
+import time
+from datetime import datetime, timezone as dt_timezone
 from django.utils import timezone
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -9,6 +10,32 @@ from channels.db import database_sync_to_async
 # from rest_framework_simplejwt.tokens import AccessToken
 from .redis_manager import GameStateManager
 from .ai_opponent import AIOpponent
+
+AI_SINK_TAUNTS = [
+    "Your fleet is shrinking! 🔥",
+    "Another one bites the dust! 💀",
+    "That ship won't be missed... by me! 😎",
+    "Bullseye! Down she goes! 🎯",
+    "Is that all you've got, Captain? 🏴‍☠️",
+    "Splash! One less ship to worry about! 💦",
+    "I can smell victory already! 🏆",
+    "Your admiral would be disappointed! 😏",
+    "The ocean claims another vessel! 🌊",
+    "Direct hit! Your fleet is crumbling! 💥",
+]
+
+AI_PLAYER_SINK_TAUNTS = [
+    "Lucky shot! 🍀",
+    "You sunk my ship? Inconceivable! 😱",
+    "Beginner's luck... 🙄",
+    "I'll make you pay for that! 😡",
+    "Just a scratch! 🛥️",
+    "My calculations were off... slightly. 📉",
+    "I let you have that one. 😉",
+    "Enjoy it while it lasts! ⏳",
+    "Your coordinates were completely random! 🎲",
+    "That was my worst ship anyway. 🚢"
+]
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -48,6 +75,11 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.user = user
                 # Mark user as online
                 await self._mark_user_online()
+                # Join personal channel group for direct messages (invites, etc.)
+                await self.channel_layer.group_add(
+                    f"user_{self.user.id}",
+                    self.channel_name,
+                )
             else:
                 # Don't set user yet; wait for join message with game_id validation
                 self.user = None
@@ -71,10 +103,53 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.user:
             # Mark user as offline
             await self._mark_user_offline()
-            
-            # If user was in a game, set grace period
+
+            # Leave personal channel group
+            await self.channel_layer.group_discard(
+                f"user_{self.user.id}",
+                self.channel_name,
+            )
+
             if self.game_id:
-                await self._set_grace_period()
+                game_meta = self.redis_manager.get_game_meta(self.game_id)
+                game_status = game_meta.get('status') if game_meta else None
+                
+                if game_status == 'active':
+                    # Record disconnect and schedule forfeit after 60s grace period
+                    self.redis_manager.set_player_disconnected(self.game_id, str(self.user.id))
+                    
+                    # Notify opponent of disconnection (PvP only)
+                    if game_meta and game_meta.get('game_type') == 'pvp':
+                        await self.channel_layer.group_send(
+                            f"game_{self.game_id}",
+                            {
+                                'type': 'opponent_disconnected',
+                                'disconnected_player_id': str(self.user.id),
+                                'reconnect_timeout_seconds': 60,
+                            }
+                        )
+                    
+                    asyncio.create_task(self._schedule_disconnect_forfeit(self.game_id, str(self.user.id)))
+                elif game_status == 'pending':
+                    # Player left before placing ships — clean up so they become available again.
+                    p1_id = game_meta.get('player_1_id')
+                    p2_id = game_meta.get('player_2_id')
+                    game_type = game_meta.get('game_type')
+                    self.redis_manager.remove_active_game(str(self.user.id))
+                    if game_type == 'pvp':
+                        # For PvP pending games cancel entirely so neither player is stuck.
+                        self.redis_manager.delete_game(self.game_id)
+                        if p1_id:
+                            self.redis_manager.remove_active_game(p1_id)
+                        if p2_id:
+                            self.redis_manager.remove_active_game(p2_id)
+                        asyncio.create_task(self.channel_layer.group_send(
+                            f"game_{self.game_id}",
+                            {'type': 'game_cancelled', 'reason': 'player_left'},
+                        ))
+                    else:
+                        # AI pending game — just clear the entry for this user.
+                        self.redis_manager.delete_game(self.game_id)
         
         if self.game_id:
             # Leave game group
@@ -82,6 +157,106 @@ class GameConsumer(AsyncWebsocketConsumer):
                 f"game_{self.game_id}",
                 self.channel_name
             )
+    
+    async def _schedule_disconnect_forfeit(self, game_id, user_id):
+        """Give a disconnected player 60 seconds to reconnect before forfeiting.
+        Waits 3 seconds first to detect simultaneous disconnects — if both players
+        disconnect within this window, the game is erased with no winner.
+        After the 3s check, waits the remaining 57 seconds before forfeiting.
+        """
+        try:
+            # Phase 1: 3s window to catch simultaneous disconnects
+            await asyncio.sleep(3)
+
+            game_meta = self.redis_manager.get_game_meta(game_id)
+            if not game_meta or game_meta.get('status') != 'active':
+                return
+
+            # If player already reconnected, nothing to do
+            disconnected_at = self.redis_manager.get_player_disconnected(game_id, user_id)
+            if not disconnected_at:
+                return
+
+            p1 = game_meta.get('player_1_id')
+            p2 = game_meta.get('player_2_id')
+            other = p2 if user_id == p1 else p1
+
+            other_disconnected = self.redis_manager.get_player_disconnected(game_id, other) if other else None
+
+            if other_disconnected:
+                # Both players disconnected simultaneously — erase game, no winner
+                self.redis_manager.delete_game(game_id)
+                self.redis_manager.remove_active_game(user_id)
+                if other:
+                    self.redis_manager.remove_active_game(other)
+                await self.channel_layer.group_send(
+                    f"game_{game_id}",
+                    {'type': 'game_ended', 'reason': 'both_disconnected', 'forfeited_by': None, 'winner_id': None}
+                )
+                return
+
+            # Phase 2: wait the remaining 57 seconds (total 60s grace period)
+            await asyncio.sleep(57)
+
+            game_meta = self.redis_manager.get_game_meta(game_id)
+            if not game_meta or game_meta.get('status') != 'active':
+                return
+
+            # Check if the player has reconnected during the grace period
+            disconnected_at = self.redis_manager.get_player_disconnected(game_id, user_id)
+            if not disconnected_at:
+                return
+
+            # Still disconnected after 60 seconds — forfeit
+            await self._finalize_forfeit(user_id, game_id)
+            self.redis_manager.delete_game(game_id)
+            self.redis_manager.remove_active_game(user_id)
+            if other:
+                self.redis_manager.remove_active_game(other)
+            await self.channel_layer.group_send(
+                f"game_{game_id}",
+                {'type': 'game_ended', 'reason': 'disconnect', 'forfeited_by': user_id, 'winner_id': other}
+            )
+        except Exception:
+            pass
+    
+    async def _schedule_placement_timeout(self, game_id, waiting_for_player_id):
+        """Cancel a PvP game if the waiting player does not place ships in time."""
+        try:
+            # Respect the stored timer start so multiple calls don't reset the clock
+            existing_start = self.redis_manager.get_placement_timer_start(game_id)
+            if existing_start:
+                elapsed = time.time() - existing_start
+                sleep_for = max(0, 60 - elapsed)
+            else:
+                sleep_for = 60
+
+            await asyncio.sleep(sleep_for)
+            
+            game_meta = self.redis_manager.get_game_meta(game_id)
+            if not game_meta or game_meta.get('status') != 'pending':
+                return
+            
+            # Check whether the expected player still hasn't placed ships
+            p1_id = game_meta.get('player_1_id')
+            p2_id = game_meta.get('player_2_id')
+            player_key = 'player_1' if waiting_for_player_id == p1_id else 'player_2'
+            ships = self.redis_manager.get_ships(game_id, player_key)
+            if ships and ships.get('positions'):
+                return  # Ships placed in time — game_start already handled activation
+            
+            # Cancel the game
+            self.redis_manager.delete_game(game_id)
+            self.redis_manager.remove_active_game(p1_id)
+            if p2_id:
+                self.redis_manager.remove_active_game(p2_id)
+            
+            await self.channel_layer.group_send(
+                f"game_{game_id}",
+                {'type': 'game_cancelled', 'reason': 'placement_timeout'}
+            )
+        except Exception:
+            pass
     
     async def receive(self, text_data):
         """Handle incoming WebSocket messages."""
@@ -97,6 +272,10 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self._handle_game_move(data)
             elif message_type == 'game_forfeit':
                 await self._handle_game_forfeit(data)
+            elif message_type == 'chat_message':
+                await self._handle_chat_message(data)
+            elif message_type == 'leave_game':
+                await self._handle_leave_game()
             else:
                 await self.send_error('Unknown message type')
         
@@ -118,6 +297,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             user = self.scope.get("user")
             if user and getattr(user, "is_authenticated", False):
                 self.user = user
+                # Join personal group now that we have a confirmed user
+                await self.channel_layer.group_add(
+                    f"user_{self.user.id}",
+                    self.channel_name,
+                )
             else:
                 await self.send_error('Authentication required to join a game')
                 return
@@ -129,9 +313,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Verify user is in game
         is_valid = await self._verify_user_in_game(game_id)
         if not is_valid:
+            # Check if it was a forfeited game due to timeout? Active check handles it.
+            # If game gone from Redis, is_valid is False.
             await self.send_error('User not in this game')
             return
         
+        # Clear any stale disconnect record (player might reconnect quickly)
+        self.redis_manager.clear_player_disconnected(game_id, str(self.user.id))
+
         self.game_id = game_id
 
         game_meta = await self._get_game_meta(game_id)
@@ -153,6 +342,58 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'username': self.user.username,
             }
         )
+        
+        # PvP-specific join logic
+        if game_meta and game_meta.get('game_type') == 'pvp':
+            if game_meta.get('status') == 'active':
+                # Game was activated while this player was submitting ships (missed group_send).
+                # Send game_start directly so the game can begin on their screen.
+                current_turn = self.redis_manager.get_current_turn(game_id)
+                await self.send(json.dumps({
+                    'type': 'game_start',
+                    'starting_player_id': current_turn,
+                }))
+            elif game_meta.get('status') == 'pending':
+                # Reconnect case only: if someone rejoins mid-placement, send them the remaining time
+                timer_start = self.redis_manager.get_placement_timer_start(game_id)
+                if timer_start:
+                    elapsed = time.time() - timer_start
+                    remaining = max(0, 60 - int(elapsed))
+                    player_key = 'player_1' if str(self.user.id) == game_meta.get('player_1_id') else 'player_2'
+                    my_ships = self.redis_manager.get_ships(game_id, player_key)
+                    opponent_key = 'player_2' if player_key == 'player_1' else 'player_1'
+                    opponent_id = game_meta.get(f'{opponent_key}_id')
+                    opponent_ships = self.redis_manager.get_ships(game_id, opponent_key)
+                    has_my_ships = bool(my_ships and my_ships.get('positions'))
+                    has_opp_ships = bool(opponent_ships and opponent_ships.get('positions'))
+
+                    if has_opp_ships and not has_my_ships:
+                        # I'm the one who hasn't placed yet
+                        if remaining > 0:
+                            await self.send(json.dumps({
+                                'type': 'placement_timer_start',
+                                'seconds': remaining,
+                                'waiting_for_player_id': str(self.user.id),
+                            }))
+                        else:
+                            # Timer already expired — cancel game now
+                            p1_id = game_meta.get('player_1_id')
+                            p2_id = game_meta.get('player_2_id')
+                            self.redis_manager.delete_game(game_id)
+                            self.redis_manager.remove_active_game(p1_id)
+                            if p2_id:
+                                self.redis_manager.remove_active_game(p2_id)
+                            await self.channel_layer.group_send(
+                                f"game_{game_id}",
+                                {'type': 'game_cancelled', 'reason': 'placement_timeout'}
+                            )
+                    elif has_my_ships and not has_opp_ships:
+                        # I placed first and reconnected — resend timer to myself only
+                        await self.send(json.dumps({
+                            'type': 'placement_timer_start',
+                            'seconds': remaining,
+                            'waiting_for_player_id': str(opponent_id),
+                        }))
     
     async def _handle_ping(self, data):
         """Handle ping/heartbeat."""
@@ -262,6 +503,22 @@ class GameConsumer(AsyncWebsocketConsumer):
             move_data
         )
 
+        # AI taunt when player sinks its ship
+        if newly_sunk and opponent_key == 'player_2' and game_meta['game_type'] == 'ai':
+            taunt = random.choice(AI_PLAYER_SINK_TAUNTS)
+            taunt_timestamp = datetime.utcnow().isoformat()
+            self.redis_manager.add_chat_message(self.game_id, game_meta.get('player_2_id', 'ai'), 'AI', taunt, taunt_timestamp)
+            await self.channel_layer.group_send(
+                f"game_{self.game_id}",
+                {
+                    'type': 'chat_message',
+                    'sender_id': game_meta.get('player_2_id', 'ai'),
+                    'sender_username': 'AI',
+                    'message': taunt,
+                    'timestamp': taunt_timestamp,
+                }
+            )
+
         # Check for win condition
         if self._are_all_ships_sunk(opponent_ships, existing_shots + [shot_record]):
             await self.channel_layer.group_send(
@@ -280,8 +537,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             if opponent_key == 'player_2' and game_meta['game_type'] == 'ai':
                 if game_meta.get('player_2_id'):
                     self.redis_manager.set_current_turn(self.game_id, game_meta['player_2_id'])
-                await asyncio.sleep(self.ai_initial_delay)
-                await self._handle_ai_move(game_meta)
+                # Run AI move in background to allow immediate feedback for miss
+                asyncio.create_task(self._handle_ai_move(game_meta))
             else:
                 opponent_id = game_meta['player_2_id'] if player_key == 'player_1' else game_meta['player_1_id']
                 if opponent_id:
@@ -290,6 +547,63 @@ class GameConsumer(AsyncWebsocketConsumer):
             # Hit: same player shoots again
             self.redis_manager.set_current_turn(self.game_id, player_id)
     
+    async def _handle_leave_game(self):
+        """Handle graceful early leave during ship placement (pending game phase).
+        Called when the frontend navigates away before a game starts.
+        Mirrors the pending-status branch of disconnect().
+        """
+        if not self.game_id:
+            return
+
+        game_meta = self.redis_manager.get_game_meta(self.game_id)
+        if not game_meta:
+            self.game_id = None
+            return
+
+        game_status = game_meta.get('status')
+        if game_status == 'pending':
+            p1_id = game_meta.get('player_1_id')
+            p2_id = game_meta.get('player_2_id')
+            game_type = game_meta.get('game_type')
+
+            if game_type == 'pvp':
+                self.redis_manager.delete_game(self.game_id)
+                if p1_id:
+                    self.redis_manager.remove_active_game(p1_id)
+                if p2_id:
+                    self.redis_manager.remove_active_game(p2_id)
+                asyncio.create_task(self.channel_layer.group_send(
+                    f"game_{self.game_id}",
+                    {'type': 'game_cancelled', 'reason': 'player_left'},
+                ))
+            else:
+                # AI game
+                self.redis_manager.delete_game(self.game_id)
+                self.redis_manager.remove_active_game(str(self.user.id))
+        elif game_status == 'active':
+            # Record disconnect and schedule forfeit after 60s grace period
+            self.redis_manager.set_player_disconnected(self.game_id, str(self.user.id))
+            
+            # Notify opponent of disconnection (PvP only)
+            if game_meta.get('game_type') == 'pvp':
+                await self.channel_layer.group_send(
+                    f"game_{self.game_id}",
+                    {
+                        'type': 'opponent_disconnected',
+                        'disconnected_player_id': str(self.user.id),
+                        'reconnect_timeout_seconds': 60,
+                    }
+                )
+            
+            asyncio.create_task(self._schedule_disconnect_forfeit(self.game_id, str(self.user.id)))
+
+        # Leave the game channel group and clear local game reference
+        await self.channel_layer.group_discard(
+            f"game_{self.game_id}",
+            self.channel_name,
+        )
+        self.game_id = None
+
     async def _handle_game_forfeit(self, data):
         """Handle game forfeit."""
         if not self.game_id:
@@ -302,6 +616,35 @@ class GameConsumer(AsyncWebsocketConsumer):
             {
                 'type': 'game_forfeit',
                 'player_id': str(self.user.id),
+            }
+        )
+    
+    async def _handle_chat_message(self, data):
+        """Handle in-game chat message."""
+        if not self.game_id:
+            await self.send_error('Not in a game')
+            return
+        
+        message = data.get('message', '').strip()
+        if not message:
+            return
+        
+        # Sanitize: limit length
+        message = message[:200]
+        timestamp = datetime.utcnow().isoformat()
+        
+        # Store in Redis
+        self.redis_manager.add_chat_message(self.game_id, self.user.id, self.user.username, message, timestamp)
+        
+        # Broadcast to game group
+        await self.channel_layer.group_send(
+            f"game_{self.game_id}",
+            {
+                'type': 'chat_message',
+                'sender_id': str(self.user.id),
+                'sender_username': self.user.username,
+                'message': message,
+                'timestamp': timestamp,
             }
         )
     
@@ -339,6 +682,54 @@ class GameConsumer(AsyncWebsocketConsumer):
             'reason': event['reason'],
         }))
     
+    async def opponent_disconnected(self, event):
+        """Notify the remaining player that their opponent disconnected."""
+        await self.send(json.dumps({
+            'type': 'opponent_disconnected',
+            'disconnected_player_id': event['disconnected_player_id'],
+            'reconnect_timeout_seconds': event.get('reconnect_timeout_seconds'),
+        }))
+    
+    async def game_start(self, event):
+        """Notify both players that the game has started (both ships placed)."""
+        await self.send(json.dumps({
+            'type': 'game_start',
+            'starting_player_id': event['starting_player_id'],
+        }))
+
+    async def placement_timer_start(self, event):
+        """Forward placement_timer_start event to WebSocket client.
+        If this consumer belongs to the player who just placed first, start the 60s cleanup task.
+        """
+        await self.send(json.dumps({
+            'type': 'placement_timer_start',
+            'seconds': event.get('seconds', 60),
+            'waiting_for_player_id': event.get('waiting_for_player_id'),
+        }))
+        # Only the player who placed first (placed_by_player_id) starts the asyncio timeout
+        if self.user and self.game_id and str(self.user.id) == event.get('placed_by_player_id'):
+            asyncio.create_task(self._schedule_placement_timeout(
+                self.game_id,
+                event.get('waiting_for_player_id')
+            ))
+
+    async def game_cancelled(self, event):
+        """Notify players that the game was cancelled (placement timeout or both left)."""
+        await self.send(json.dumps({
+            'type': 'game_cancelled',
+            'reason': event.get('reason', 'cancelled'),
+        }))
+    
+    async def chat_message(self, event):
+        """Send chat_message event to WebSocket."""
+        await self.send(json.dumps({
+            'type': 'chat_message',
+            'sender_id': event['sender_id'],
+            'sender_username': event['sender_username'],
+            'message': event['message'],
+            'timestamp': event['timestamp'],
+        }))
+    
     async def friend_online(self, event):
         """Send friend online notification."""
         await self.send(json.dumps({
@@ -363,9 +754,54 @@ class GameConsumer(AsyncWebsocketConsumer):
             'message': event.get('message'),
             'data': event.get('data', {}),
         }))
+
+    # ------------------------------------------------------------------
+    # Direct-invite event handlers (sent to user_{user_id} group)
+    # ------------------------------------------------------------------
+
+    async def invite_received(self, event):
+        """Forward incoming game invite to the WebSocket client."""
+        await self.send(json.dumps({
+            'type': 'invite_received',
+            'invite_id': event['invite_id'],
+            'from_user_id': event['from_user_id'],
+            'from_username': event['from_username'],
+        }))
+
+    async def invite_cancelled(self, event):
+        """Notify the invitee that the invite was cancelled."""
+        await self.send(json.dumps({
+            'type': 'invite_cancelled',
+            'invite_id': event['invite_id'],
+        }))
+
+    async def invite_accepted(self, event):
+        """Notify the inviter that their invite was accepted; carry game_id."""
+        await self.send(json.dumps({
+            'type': 'invite_accepted',
+            'invite_id': event['invite_id'],
+            'game_id': event['game_id'],
+            'by_username': event['by_username'],
+        }))
+
+    async def invite_rejected(self, event):
+        """Notify the inviter that their invite was rejected."""
+        await self.send(json.dumps({
+            'type': 'invite_rejected',
+            'invite_id': event['invite_id'],
+            'by_username': event['by_username'],
+        }))
     
     # Utility methods
     
+    async def force_logout(self, event):
+        """Handle forced logout from another login."""
+        await self.send(json.dumps({
+            'type': 'force_logout',
+            'message': event.get('message', 'Logged in from another device.')
+        }))
+        await self.close(code=4001)
+
     async def send_error(self, message):
         """Send error message to client."""
         await self.send(json.dumps({
@@ -395,19 +831,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             # Log but don't fail - move should still be broadcast
             pass
 
-    @database_sync_to_async
-    def _get_game_meta(self, game_id):
-        from game.models import Game
-
-        try:
-            game = Game.objects.get(id=game_id)
-            return {
-                'game_type': game.game_type,
-                'player_1_id': str(game.player_1_id),
-                'player_2_id': str(game.player_2_id) if game.player_2_id else None,
-            }
-        except Game.DoesNotExist:
+    async def _get_game_meta(self, game_id):
+        game_meta = self.redis_manager.get_game_meta(game_id)
+        if not game_meta:
             return None
+        return game_meta
 
     def _are_all_ships_sunk(self, ships_data, shots):
         if not ships_data or not ships_data.get('positions'):
@@ -646,116 +1074,155 @@ class GameConsumer(AsyncWebsocketConsumer):
         return ai_ships
 
     async def _handle_ai_move(self, game_meta):
-        player_ships = self.redis_manager.get_ships(self.game_id, 'player_1')
-        if not player_ships or not player_ships.get('positions'):
-            return
-
-        ai_shots = self.redis_manager.get_shots(self.game_id, 'player_2')
-
-        while True:
-            target = self._select_ai_target(player_ships, ai_shots)
-            if not target:
-                if game_meta.get('player_1_id'):
-                    self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
+        """Handle AI opponent move."""
+        try:
+            player_ships = self.redis_manager.get_ships(self.game_id, 'player_1')
+            if not player_ships or not player_ships.get('positions'):
                 return
 
-            row = target.get('x')
-            col = target.get('y')
+            ai_shots = self.redis_manager.get_shots(self.game_id, 'player_2')
 
-            if not isinstance(row, int) or not isinstance(col, int):
-                if game_meta.get('player_1_id'):
-                    self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
-                return
+            while True:
+                target = self._select_ai_target(player_ships, ai_shots)
+                if not target:
+                    if game_meta.get('player_1_id'):
+                        self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
+                    return
 
-            if row < 0 or row > 9 or col < 0 or col > 9:
-                if game_meta.get('player_1_id'):
-                    self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
-                return
+                row = target.get('x')
+                col = target.get('y')
 
-            if any(s.get('row') == row and s.get('col') == col for s in ai_shots):
-                return
+                if not isinstance(row, int) or not isinstance(col, int):
+                    if game_meta.get('player_1_id'):
+                        self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
+                    return
 
-            pre_sunk = self._get_sunk_ships(player_ships, ai_shots)
+                if row < 0 or row > 9 or col < 0 or col > 9:
+                    if game_meta.get('player_1_id'):
+                        self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
+                    return
 
-            hit = any(pos['x'] == row and pos['y'] == col for pos in player_ships['positions'])
-            result = 'hit' if hit else 'miss'
+                if any(s.get('row') == row and s.get('col') == col for s in ai_shots):
+                    return
 
-            shot_record = {
-                'row': row,
-                'col': col,
-                'result': result,
-                'timestamp': datetime.utcnow().isoformat(),
-            }
-            
-            # Calculate sunk ships first to prepare metadata
-            ai_shots_with_current = ai_shots + [shot_record] if ai_shots else [shot_record]
-            post_sunk = self._get_sunk_ships(player_ships, ai_shots_with_current)
-            newly_sunk = self._find_newly_sunk_ship(pre_sunk, post_sunk)
-            inactive_cells = self._get_adjacent_cells(newly_sunk) if newly_sunk else []
-            
-            # Update shot record with metadata
-            if inactive_cells:
-                shot_record['inactive'] = inactive_cells
-                # Also store inactive cells in a separate Redis set for reliable retrieval on reload
-                self.redis_manager.add_inactive_cells(self.game_id, 'player_1', inactive_cells)
-            if newly_sunk:
-                shot_record['sunk'] = True
-                shot_record['sunk_ship'] = newly_sunk
-            
-            self.redis_manager.add_shot(self.game_id, 'player_2', shot_record)
-            ai_shots.append(shot_record)
+                pre_sunk = self._get_sunk_ships(player_ships, ai_shots)
 
-            move_data = {
-                'type': 'game_move',
-                'player_id': game_meta['player_2_id'],
-                'move_type': 'shot',
-                'data': {
+                hit = any(pos['x'] == row and pos['y'] == col for pos in player_ships['positions'])
+                result = 'hit' if hit else 'miss'
+
+                shot_record = {
                     'row': row,
                     'col': col,
                     'result': result,
-                    'sunk': True if newly_sunk else False,
-                    'sunk_ship': newly_sunk or [],
-                    'inactive': inactive_cells,
-                },
-            }
+                    'timestamp': datetime.utcnow().isoformat(),
+                }
+                
+                # Calculate sunk ships first to prepare metadata
+                ai_shots_with_current = ai_shots + [shot_record] if ai_shots else [shot_record]
+                post_sunk = self._get_sunk_ships(player_ships, ai_shots_with_current)
+                newly_sunk = self._find_newly_sunk_ship(pre_sunk, post_sunk)
+                inactive_cells = self._get_adjacent_cells(newly_sunk) if newly_sunk else []
+                
+                # Update shot record with metadata
+                if inactive_cells:
+                    shot_record['inactive'] = inactive_cells
+                    # Also store inactive cells in a separate Redis set for reliable retrieval on reload
+                    self.redis_manager.add_inactive_cells(self.game_id, 'player_1', inactive_cells)
+                if newly_sunk:
+                    shot_record['sunk'] = True
+                    shot_record['sunk_ship'] = newly_sunk
+                
+                self.redis_manager.add_shot(self.game_id, 'player_2', shot_record)
+                ai_shots.append(shot_record)
 
-            await self._record_move(move_data)
-            await self.channel_layer.group_send(
-                f"game_{self.game_id}",
-                move_data
-            )
+                # AI taunt on sinking a ship
+                if newly_sunk:
+                    taunt = random.choice(AI_SINK_TAUNTS)
+                    taunt_timestamp = datetime.utcnow().isoformat()
+                    self.redis_manager.add_chat_message(self.game_id, game_meta.get('player_2_id', 'ai'), 'AI', taunt, taunt_timestamp)
+                    await self.channel_layer.group_send(
+                        f"game_{self.game_id}",
+                        {
+                            'type': 'chat_message',
+                            'sender_id': game_meta.get('player_2_id', 'ai'),
+                            'sender_username': 'AI',
+                            'message': taunt,
+                            'timestamp': taunt_timestamp,
+                        }
+                    )
 
-            if self._are_all_ships_sunk(player_ships, ai_shots):
+                move_data = {
+                    'type': 'game_move',
+                    'player_id': game_meta['player_2_id'],
+                    'move_type': 'shot',
+                    'data': {
+                        'row': row,
+                        'col': col,
+                        'result': result,
+                        'sunk': True if newly_sunk else False,
+                        'sunk_ship': newly_sunk or [],
+                        'inactive': inactive_cells,
+                    },
+                }
+
+                await self._record_move(move_data)
                 await self.channel_layer.group_send(
                     f"game_{self.game_id}",
-                    {
-                        'type': 'game_ended',
-                        'winner_id': game_meta['player_2_id'],
-                        'reason': 'all_ships_sunk',
-                    }
+                    move_data
                 )
-                await self._finalize_game(game_meta['player_2_id'])
-                self.redis_manager.end_game(self.game_id)
-                return
 
-            if result == 'miss':
-                if game_meta.get('player_1_id'):
-                    self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
-                return
+                if self._are_all_ships_sunk(player_ships, ai_shots):
+                    await self.channel_layer.group_send(
+                        f"game_{self.game_id}",
+                        {
+                            'type': 'game_ended',
+                            'winner_id': game_meta['player_2_id'],
+                            'reason': 'all_ships_sunk',
+                        }
+                    )
+                    await self._finalize_game(game_meta['player_2_id'])
+                    self.redis_manager.end_game(self.game_id)
+                    return
 
-            await asyncio.sleep(self.ai_chain_delay)
+                if result == 'miss':
+                    if game_meta.get('player_1_id'):
+                        self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
+                    return
+
+                await asyncio.sleep(self.ai_chain_delay)
+                
+                # Hit! AI takes another shot (recursively)
+                await self._handle_ai_move(game_meta)
+                return # Important to break loop after recursive call to avoid double execution if it returns (though it shouldn't reach here due to await)
+                
+        except Exception as e:
+            # Log error but don't crash connection
+            print(f"Error in AI move: {e}")
+            await self.send_error("AI Opponent Error")
+            # Return turn to player to unblock game
+            if game_meta and game_meta.get('player_1_id'):
+                self.redis_manager.set_current_turn(self.game_id, game_meta['player_1_id'])
 
     @database_sync_to_async
     def _finalize_game(self, winner_id):
         from game.models import Game, PlayerStats
         from authentication.models import User
 
-        try:
-            game = Game.objects.get(id=self.game_id)
-        except Game.DoesNotExist:
+        # Check if game already exists (REST endpoint may have already saved it).
+        # Still ensure active-game Redis keys are cleared even on this early path.
+        if Game.objects.filter(id=self.game_id).exists():
+            game_meta = self.redis_manager.get_game_meta(self.game_id)
+            if game_meta:
+                p1 = game_meta.get('player_1_id')
+                p2 = game_meta.get('player_2_id')
+                if p1:
+                    self.redis_manager.remove_active_game(p1)
+                if p2:
+                    self.redis_manager.remove_active_game(p2)
             return
 
-        if game.status in ['completed', 'forfeited']:
+        game_meta = self.redis_manager.get_game_meta(self.game_id)
+        if not game_meta:
             return
 
         shots_p1 = self.redis_manager.get_shots(self.game_id, 'player_1')
@@ -768,20 +1235,60 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         p1_shots, p1_hits = summarize(shots_p1)
         p2_shots, p2_hits = summarize(shots_p2)
-
-        game.status = 'completed'
+        
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
+        game_type = game_meta.get('game_type')
+        created_at_str = game_meta.get('created_at')
+        
         try:
-            winner_user = User.objects.get(id=winner_id)
-            game.winner = winner_user
+            player_1 = User.objects.get(id=player_1_id)
+            player_2 = User.objects.get(id=player_2_id) if player_2_id else None
+            winner = User.objects.get(id=winner_id) if winner_id else None
         except User.DoesNotExist:
+            return
+
+        # Parse created_at as timezone-aware datetime
+        started_at_dt = timezone.now()
+        if created_at_str:
+            try:
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                started_at_dt = start_time
+            except (ValueError, TypeError):
+                pass
+
+        # Create completed game record
+        game = Game.objects.create(
+            id=self.game_id,
+            player_1=player_1,
+            player_2=player_2,
+            game_type=game_type,
+            status='completed',
+            winner=winner,
+            started_at=started_at_dt,
+            ended_at=timezone.now(),
+            player_1_shots=p1_shots,
+            player_1_hits=p1_hits,
+            player_2_shots=p2_shots,
+            player_2_hits=p2_hits
+        )
+        
+        # Calculate duration
+        try:
+            if created_at_str:
+                # Redis stores naive UTC datetime (no Z suffix), parse and make timezone-aware
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                # Ensure ended_at is timezone-aware
+                ended_at = game.ended_at
+                if ended_at.tzinfo is None:
+                    ended_at = ended_at.replace(tzinfo=dt_timezone.utc)
+                game.duration_seconds = int((ended_at - start_time).total_seconds())
+        except (ValueError, TypeError) as e:
             pass
-        game.ended_at = timezone.now()
-        if game.started_at:
-            game.duration_seconds = int((game.ended_at - game.started_at).total_seconds())
-        game.player_1_shots = p1_shots
-        game.player_1_hits = p1_hits
-        game.player_2_shots = p2_shots
-        game.player_2_hits = p2_hits
         game.save()
 
         def get_stats(user_id):
@@ -849,6 +1356,11 @@ class GameConsumer(AsyncWebsocketConsumer):
                 player_1_stats.accuracy_percentage = (player_1_stats.total_hits / player_1_stats.total_shots) * 100
 
             player_1_stats.save()
+        
+        # Cleanup active game mappings
+        self.redis_manager.remove_active_game(str(player_1_id))
+        if player_2_id:
+            self.redis_manager.remove_active_game(str(player_2_id))
 
     def _get_user_from_token(self):
         """
@@ -865,16 +1377,16 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Fallback: no authenticated user available
         return None
     
-    @database_sync_to_async
-    def _verify_user_in_game(self, game_id):
+    async def _verify_user_in_game(self, game_id):
         """Verify user is actually in the game."""
-        from game.models import Game
-        try:
-            game = Game.objects.get(id=game_id)
-            is_player = game.player_1_id == self.user.id or game.player_2_id == self.user.id
-            return is_player
-        except Game.DoesNotExist:
+        game_meta = self.redis_manager.get_game_meta(game_id)
+        if not game_meta:
             return False
+            
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
+        
+        return str(self.user.id) == player_1_id or str(self.user.id) == player_2_id
     
     async def _mark_user_online(self):
         """Mark user as online in Redis."""
@@ -886,9 +1398,128 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.user:
             self.redis_manager.set_user_offline(str(self.user.id))
     
-    async def _set_grace_period(self):
-        """Set 60-second grace period for reconnection."""
-        self.redis_manager.set_grace_period(self.game_id)
+    # _set_grace_period removed: isconnection handling now uses _schedule_disconnect_forfeit
+    # which applies a time-limited (e.g., 60s) grace period before finalizing a forfeit.
+
+    @database_sync_to_async
+    def _finalize_forfeit(self, forfeiting_user_id, game_id):
+        from game.models import Game, PlayerStats
+        from authentication.models import User
+        
+        # Check if game already exists
+        if Game.objects.filter(id=game_id).exists():
+            return
+
+        game_meta = self.redis_manager.get_game_meta(game_id)
+        if not game_meta:
+            return
+            
+        player_1_id = game_meta.get('player_1_id')
+        player_2_id = game_meta.get('player_2_id')
+        game_type = game_meta.get('game_type')
+        created_at_str = game_meta.get('created_at')
+        
+        # Determine winner (the one who didn't forfeit)
+        winner_id = player_2_id if forfeiting_user_id == player_1_id else player_1_id
+        
+        shots_p1 = self.redis_manager.get_shots(game_id, 'player_1')
+        shots_p2 = self.redis_manager.get_shots(game_id, 'player_2')
+
+        def summarize(shots):
+            total = len(shots)
+            hits = sum(1 for shot in shots if shot.get('result') == 'hit')
+            return total, hits
+
+        p1_shots, p1_hits = summarize(shots_p1)
+        p2_shots, p2_hits = summarize(shots_p2)
+        
+        try:
+            player_1 = User.objects.get(id=player_1_id)
+            player_2 = User.objects.get(id=player_2_id) if player_2_id else None
+            winner = User.objects.get(id=winner_id) if winner_id else None
+        except User.DoesNotExist:
+            return
+
+        # Create forfeited game record
+        # Parse created_at as timezone-aware datetime
+        started_at_dt = timezone.now()
+        if created_at_str:
+            try:
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                started_at_dt = start_time
+            except (ValueError, TypeError):
+                # If the timestamp is malformed, fall back to the current time.
+                started_at_dt = timezone.now()
+        
+        game = Game.objects.create(
+            id=game_id,
+            player_1=player_1,
+            player_2=player_2,
+            game_type=game_type,
+            status='forfeited',
+            winner=winner,
+            started_at=started_at_dt,
+            ended_at=timezone.now(),
+            player_1_shots=p1_shots,
+            player_1_hits=p1_hits,
+            player_2_shots=p2_shots,
+            player_2_hits=p2_hits
+        )
+        
+        # Calculate duration
+        try:
+            if created_at_str:
+                # Redis stores naive UTC datetime (no Z suffix), parse and make timezone-aware
+                start_time = datetime.fromisoformat(created_at_str)
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=dt_timezone.utc)
+                ended_at = game.ended_at
+                if ended_at.tzinfo is None:
+                    ended_at = ended_at.replace(tzinfo=dt_timezone.utc)
+                game.duration_seconds = int((ended_at - start_time).total_seconds())
+        except (ValueError, TypeError):
+            pass
+        game.save()
+
+        def get_stats(user_id):
+            stats, _ = PlayerStats.objects.get_or_create(user_id=user_id)
+            return stats
+
+        player_1_stats = get_stats(game.player_1_id)
+        player_2_stats = get_stats(game.player_2_id) if game.player_2_id else None
+        
+        if game.game_type == 'pvp' and player_2_stats:
+            player_1_stats.games_played += 1
+            player_2_stats.games_played += 1
+            
+            if game.winner_id == game.player_1_id:
+                player_1_stats.games_won += 1
+                player_1_stats.current_win_streak += 1
+                player_2_stats.games_lost += 1
+                player_2_stats.current_win_streak = 0
+            elif game.winner_id == game.player_2_id:
+                player_2_stats.games_won += 1
+                player_2_stats.current_win_streak += 1
+                player_1_stats.games_lost += 1
+                player_1_stats.current_win_streak = 0
+                
+            player_1_stats.save()
+            player_2_stats.save()
+        else:
+             # AI game
+            player_1_stats.games_played += 1
+            if game.winner_id == game.player_1_id:
+                 player_1_stats.games_won += 1
+            else:
+                 player_1_stats.games_lost += 1
+            player_1_stats.save()
+
+        # Cleanup active game mappings
+        self.redis_manager.remove_active_game(str(player_1_id))
+        if player_2_id:
+            self.redis_manager.remove_active_game(str(player_2_id))
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):

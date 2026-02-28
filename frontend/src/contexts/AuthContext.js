@@ -13,11 +13,20 @@ export const AuthProvider = ({ children }) => {
     try {
       // Verify authentication via backend - this validates the session cookie
       const res = await api.get('/auth/me/');
-      setUser(res.data);
-      // Connect to WebSocket after successful authentication
-      gameSocket.preConnect();
+      const resolvedUser = Object.prototype.hasOwnProperty.call(res.data, 'user')
+        ? res.data.user
+        : res.data;
+
+      if (resolvedUser === null) {
+        setUser(null);
+      } else {
+        setUser(resolvedUser);
+        // Connect to WebSocket after successful authentication
+        gameSocket.preConnect();
+      }
     } catch (err) {
-      // Not authenticated or session invalid
+      // Network error or server error
+      console.error('Auth check failed:', err);
       setUser(null);
     } finally {
       setLoading(false);
@@ -31,6 +40,18 @@ export const AuthProvider = ({ children }) => {
       await checkAuth();
     };
     initialize();
+
+    const handleAuthError = () => {
+      setUser(null);
+      if (gameSocket.socket) {
+        gameSocket.disconnect();
+      }
+    };
+
+    window.addEventListener('auth_error', handleAuthError);
+    return () => {
+      window.removeEventListener('auth_error', handleAuthError);
+    };
   }, []);
 
   return (
