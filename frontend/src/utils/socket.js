@@ -86,9 +86,22 @@ class GameSocket {
         try {
           const data = JSON.parse(event.data);
 
-          // Route to specific handler
-          if (this.messageHandlers[data.type]) {
-            this.messageHandlers[data.type](data);
+          if (data.type === 'force_logout') {
+            console.warn("Received force_logout signal from server");
+            window.dispatchEvent(new Event('auth_error'));
+            return;
+          }
+
+          // Route to handlers for this message type
+          const handlers = this.messageHandlers[data.type];
+          if (handlers) {
+            handlers.forEach((handler) => {
+              try {
+                handler(data);
+              } catch (err) {
+                // Silently ignore handler errors to avoid breaking other subscribers
+              }
+            });
           }
         } catch (err) {
           // Silently handle parse errors
@@ -160,9 +173,21 @@ class GameSocket {
       this.socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          const handler = this.messageHandlers[data.type];
-          if (handler) {
-            handler(data);
+
+          if (data.type === 'force_logout') {
+            window.dispatchEvent(new Event('auth_error'));
+            return;
+          }
+
+          const handlers = this.messageHandlers[data.type];
+          if (handlers) {
+            handlers.forEach((handler) => {
+              try {
+                handler(data);
+              } catch (err) {
+                // Silently ignore handler errors to avoid breaking other subscribers
+              }
+            });
           }
         } catch (err) {
           // Silently ignore parse errors
@@ -188,15 +213,32 @@ class GameSocket {
    * @param {function} handler - Function to call when message is received
    */
   on(messageType, handler) {
-    this.messageHandlers[messageType] = handler;
+    if (!this.messageHandlers[messageType]) {
+      this.messageHandlers[messageType] = new Set();
+    }
+    this.messageHandlers[messageType].add(handler);
   }
 
   /**
    * Remove a message handler
    * @param {string} messageType - Type of message
+   * @param {function} handler - Optional specific handler to remove
    */
-  off(messageType) {
-    delete this.messageHandlers[messageType];
+  off(messageType, handler) {
+    const handlers = this.messageHandlers[messageType];
+    if (!handlers) {
+      return;
+    }
+
+    if (!handler) {
+      delete this.messageHandlers[messageType];
+      return;
+    }
+
+    handlers.delete(handler);
+    if (handlers.size === 0) {
+      delete this.messageHandlers[messageType];
+    }
   }
 
   /**

@@ -37,7 +37,7 @@ function DisplayNameEditor() {
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-4 border border-slate-700 mb-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-gray-400 text-sm">Display Name</p>
           <p className="text-white font-semibold text-lg">{user?.display_name || 'N/A'}</p>
@@ -157,7 +157,7 @@ function PlayerStats() {
         <hr className="border-slate-600 my-4" />
         <h3 className="text-lg font-semibold text-emerald-400 mt-6 mb-3">Game Statistics</h3>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <p><span className="text-emerald-400 font-semibold">Games Played:</span> {loading ? 'Loading...' : (stats.gamesPlayed ?? '0')}</p>
             <p><span className="text-emerald-400 font-semibold">Games Won:</span> {loading ? 'Loading...' : (stats.gamesWon ?? '0')}</p>
@@ -365,24 +365,24 @@ function FriendsManager() {
   };
 
   const fetchFriendsData = async (showLoading = false) => {
-    if (showLoading) setFriendsLoading(true);
-    setFriendsError('');
-    try {
-      const [acceptedResponse, pendingResponse, sentResponse] = await Promise.all([
-        api.get('/social/friendships/accepted/'),
-        api.get('/social/friendships/pending/'),
-        api.get('/social/friendships/sent/'),
-      ]);
-      setFriends(acceptedResponse.data || []);
-      setPendingRequests(pendingResponse.data || []);
-      setSentRequests(sentResponse.data || []);
-    } catch (err) {
-      console.error('Failed to load friends data:', err);
-      if (showLoading) setFriendsError('Failed to load friends data.');
-    } finally {
+      if (showLoading) setFriendsLoading(true);
+      setFriendsError('');
+      try {
+        const [acceptedResponse, pendingResponse, sentResponse] = await Promise.all([
+          api.get('/social/friendships/accepted/'),
+          api.get('/social/friendships/pending/'),
+          api.get('/social/friendships/sent/'),
+        ]);
+          setFriends(acceptedResponse.data || []);
+          setPendingRequests(pendingResponse.data || []);
+          setSentRequests(sentResponse.data || []);
+      } catch (err) {
+          console.error('Failed to load friends data:', err);
+          if (showLoading) setFriendsError('Failed to load friends data.');
+      } finally {
       setFriendsLoading(false);
-    }
-  };
+      }
+    };
 
   useEffect(() => {
     if (user?.id) {
@@ -504,7 +504,7 @@ function FriendsManager() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
-          <h3 className="text-lg font-semibold text-emerald-400 mb-3">Search by Login</h3>
+          <h3 className="text-lg font-semibold text-emerald-400 mb-3">Search by Username</h3>
           <form onSubmit={handleSearch} className="space-y-3">
             <input
               type="text"
@@ -534,9 +534,9 @@ function FriendsManager() {
               {searchResults.map((result) => (
                 <div
                   key={result.id}
-                  className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                  className="flex flex-col gap-3 rounded-lg bg-slate-700/50 p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <Link to={`/profile/${result.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                  <Link to={`/profile/${result.id}`} className="flex min-w-0 flex-1 items-center gap-3 hover:opacity-80 transition-opacity">
                     <img
                       src={getAvatarUrl(result.avatar_url)}
                       alt={result.username}
@@ -546,30 +546,30 @@ function FriendsManager() {
                         e.target.src = '/media/avatars/avatar_1.jpg';
                       }}
                     />
-                    <div>
-                      <p className="text-white font-semibold">{result.display_name || result.username}</p>
-                      <p className="text-gray-400 text-sm">@{result.username}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-white font-semibold">{result.display_name || result.username}</p>
+                      <p className="truncate text-sm text-gray-400">@{result.username}</p>
                     </div>
                   </Link>
                   {(() => {
                     const status = getFriendshipStatus(result.id);
                     if (status === 'accepted') {
                       return (
-                        <span className="px-3 py-2 bg-emerald-600/30 text-emerald-400 rounded-md text-sm font-semibold">
+                        <span className="self-end rounded-md bg-emerald-600/30 px-3 py-2 text-sm font-semibold text-emerald-400 sm:self-auto">
                           Friends
                         </span>
                       );
                     }
                     if (status === 'pending_sent') {
                       return (
-                        <span className="px-3 py-2 bg-yellow-600/30 text-yellow-400 rounded-md text-sm font-semibold">
+                        <span className="self-end rounded-md bg-yellow-600/30 px-3 py-2 text-sm font-semibold text-yellow-400 sm:self-auto">
                           Pending
                         </span>
                       );
                     }
                     if (status === 'pending_incoming') {
                       return (
-                        <span className="px-3 py-2 bg-blue-600/30 text-blue-400 rounded-md text-sm font-semibold">
+                        <span className="self-end rounded-md bg-blue-600/30 px-3 py-2 text-sm font-semibold text-blue-400 sm:self-auto">
                           Respond
                         </span>
                       );
@@ -577,7 +577,7 @@ function FriendsManager() {
                     return (
                       <button
                         onClick={() => handleSendRequest(result.id)}
-                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-semibold"
+                        className="self-end rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 sm:self-auto"
                       >
                         Add
                       </button>
@@ -602,9 +602,9 @@ function FriendsManager() {
                 return (
                   <div
                     key={request.id}
-                    className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                    className="flex flex-col gap-3 rounded-lg bg-slate-700/50 p-3 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <Link to={`/profile/${requester?.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    <Link to={`/profile/${requester?.id}`} className="flex min-w-0 flex-1 items-center gap-3 hover:opacity-80 transition-opacity">
                       <img
                         src={getAvatarUrl(requester?.avatar_url)}
                         alt={requester?.username}
@@ -614,12 +614,12 @@ function FriendsManager() {
                           e.target.src = '/media/avatars/avatar_1.jpg';
                         }}
                       />
-                      <div>
-                        <p className="text-white font-semibold">{requester?.display_name || requester?.username}</p>
-                        <p className="text-gray-400 text-sm">@{requester?.username}</p>
+                      <div className="min-w-0">
+                        <p className="truncate text-white font-semibold">{requester?.display_name || requester?.username}</p>
+                        <p className="truncate text-sm text-gray-400">@{requester?.username}</p>
                       </div>
                     </Link>
-                    <div className="flex gap-2">
+                    <div className="flex w-full justify-end gap-2 sm:w-auto">
                       <button
                         onClick={() => handleAcceptRequest(request.id)}
                         className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-sm font-semibold"
@@ -651,9 +651,9 @@ function FriendsManager() {
                 return (
                   <div
                     key={request.id}
-                    className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                    className="flex flex-col gap-3 rounded-lg bg-slate-700/50 p-3 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <Link to={`/profile/${addressee?.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    <Link to={`/profile/${addressee?.id}`} className="flex min-w-0 flex-1 items-center gap-3 hover:opacity-80 transition-opacity">
                       <img
                         src={getAvatarUrl(addressee?.avatar_url)}
                         alt={addressee?.username}
@@ -663,12 +663,12 @@ function FriendsManager() {
                           e.target.src = '/media/avatars/avatar_1.jpg';
                         }}
                       />
-                      <div>
-                        <p className="text-white font-semibold">{addressee?.display_name || addressee?.username}</p>
-                        <p className="text-gray-400 text-sm">@{addressee?.username}</p>
+                      <div className="min-w-0">
+                        <p className="truncate text-white font-semibold">{addressee?.display_name || addressee?.username}</p>
+                        <p className="truncate text-sm text-gray-400">@{addressee?.username}</p>
                       </div>
                     </Link>
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-full flex-wrap justify-end items-center gap-2 sm:w-auto">
                       <span className="px-2 py-1 bg-yellow-600/30 text-yellow-400 rounded text-xs font-semibold">
                         Pending
                       </span>
@@ -699,9 +699,9 @@ function FriendsManager() {
                 return (
                   <div
                     key={friendship.id}
-                    className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3"
+                    className="flex flex-col gap-3 rounded-lg bg-slate-700/50 p-3 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <Link to={`/profile/${friend?.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    <Link to={`/profile/${friend?.id}`} className="flex min-w-0 flex-1 items-center gap-3 hover:opacity-80 transition-opacity">
                       <img
                         src={getAvatarUrl(friend?.avatar_url)}
                         alt={friend?.username}
@@ -711,14 +711,14 @@ function FriendsManager() {
                           e.target.src = '/media/avatars/avatar_1.jpg';
                         }}
                       />
-                      <div>
-                        <p className="text-white font-semibold">{friend?.display_name || friend?.username}</p>
-                        <p className="text-gray-400 text-sm">@{friend?.username}</p>
+                      <div className="min-w-0">
+                        <p className="truncate text-white font-semibold">{friend?.display_name || friend?.username}</p>
+                        <p className="truncate text-sm text-gray-400">@{friend?.username}</p>
                       </div>
                     </Link>
                     <button
                       onClick={() => handleRemoveFriend(friendship.id)}
-                      className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-semibold"
+                      className="self-end rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 sm:self-auto"
                     >
                       Remove
                     </button>
@@ -746,9 +746,9 @@ function GameHistory() {
         const response = await api.get('/games/game_history/');
         setGames(response.data || []);
       } catch (err) {
-        const errorMsg = err.response?.data?.error || 'Failed to fetch game history';
-        setError(errorMsg);
-        console.error('Failed to fetch game history:', err);
+          const errorMsg = err.response?.data?.error || 'Failed to fetch game history';
+          setError(errorMsg);
+          console.error('Failed to fetch game history:', err);
       } finally {
         setLoading(false);
       }
@@ -843,7 +843,7 @@ function Body() {
       {/* Menu return button */}
       <ReturnToMenuButton />
       <DisplayNameEditor />
-      <div className="grid grid-cols-2 gap-8 items-start">
+      <div className="grid grid-cols-1 gap-8 items-start lg:grid-cols-2">
         <PlayerStats />
         <Avatar />
       </div>

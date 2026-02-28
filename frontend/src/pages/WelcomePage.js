@@ -46,14 +46,14 @@ function WelcomePage() {
         const data = response.data;
         localStorage.setItem('user', JSON.stringify(data.user));
         setSuccess('Login successful!');
-        
+
         await checkAuth();
         navigate('/');
       }
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 
-                       err.response?.data?.error_pl || 
-                       'Login failed';
+      const errorMsg = err.response?.data?.error ||
+        err.response?.data?.error_pl ||
+        'Login failed';
       setError(errorMsg);
       console.error('Login error:', err);
     } finally {
@@ -67,10 +67,10 @@ function WelcomePage() {
         {/* Header */}
         <div className="text-center">
           <h1 className="text-5xl font-bold text-white tracking-wide drop-shadow-lg">
-            ⚓ BATTLESHIP
+            ⚓ BATTLESHIPS
           </h1>
           <p className="text-lg text-emerald-400 mt-2 tracking-wide">
-            3D Tactical Multiplayer Game
+            Tactical Online Game
           </p>
         </div>
 
@@ -100,6 +100,7 @@ function WelcomePage() {
               onChange={handleInputChange}
               required
               disabled={loading}
+              autoComplete="username"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
                          focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
                          disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
@@ -113,6 +114,7 @@ function WelcomePage() {
               onChange={handleInputChange}
               required
               disabled={loading}
+              autoComplete="current-password"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-md text-base 
                          focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20
                          disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
@@ -128,8 +130,8 @@ function WelcomePage() {
             >
               {loading ? 'LOGGING IN...' : 'LOGIN'}
             </button>
-            
-          <button
+
+            <button
               type="button"
               onClick={() => window.location.href = `${API_BASE_URL}/auth/oauth/42/start/`}
               className="w-full py-3 bg-blue-600 text-white font-bold uppercase rounded-md
@@ -156,24 +158,24 @@ function WelcomePage() {
             ft_transcendence - 42 School Project
           </p>
           <div className="flex gap-4 justify-center text-sm">
-			<Link
-			  to="/terms-of-service"
-			  className="text-emerald-400 hover:text-emerald-300 transition-colors"
-			>
-			  Terms of Service
-			</Link>
-			<span className="text-gray-500">|</span>
-			<Link
-			  to="/privacy-policy"
-			  className="text-emerald-400 hover:text-emerald-300 transition-colors"
-			>
-			  Privacy Policy
-			</Link>
-		  </div>
-		</div>
-	  </div>
-	</div>
-	);
+            <Link
+              to="/terms-of-service"
+              className="text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              Terms of Service
+            </Link>
+            <span className="text-gray-500">|</span>
+            <Link
+              to="/privacy-policy"
+              className="text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              Privacy Policy
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default WelcomePage;
