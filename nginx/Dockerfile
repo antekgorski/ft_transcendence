@@ -15,5 +15,5 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 443
 # EXPOSE 80
 
-# Start nginx
+# Start nginx (default command)
 CMD ["nginx", "-g", "daemon off;"]
