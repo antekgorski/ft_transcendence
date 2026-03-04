@@ -98,10 +98,11 @@ def register(request):
     if not username or not email or not password:
         return Response(
             {
+                "ok": False,
                 "error": "username, email and password are required.",
                 "error_pl": "username, email i password są wymagane."
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_200_OK
         )
 
     # Email format validation
@@ -110,20 +111,22 @@ def register(request):
     except ValidationError:
         return Response(
             {
+                "ok": False,
                 "error": "Invalid email format.",
                 "error_pl": "Niepoprawny format email."
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_200_OK
         )
 
     # Password length validation
     if len(password) < 8:
         return Response(
             {
+                "ok": False,
                 "error": "Password must be at least 8 characters long.",
                 "error_pl": "Hasło musi mieć co najmniej 8 znaków."
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_200_OK
         )
 
     try:
@@ -151,6 +154,7 @@ def register(request):
 
         return Response(
             {
+                "ok": True,
                 "message": "User registered successfully.",
                 "message_pl": "Użytkownik zarejestrowany pomyślnie.",
                 "user": {
@@ -162,7 +166,7 @@ def register(request):
                     "created_at": user.created_at.isoformat()
                 }
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_200_OK
         )
 
     except IntegrityError as e:
@@ -170,36 +174,39 @@ def register(request):
         if 'username' in error_message:
             return Response(
                 {
+                    "ok": False,
                     "error": "Username already exists.",
                     "error_pl": "Nazwa użytkownika już istnieje."
                 },
-                status=status.HTTP_409_CONFLICT
+                status=status.HTTP_200_OK
             )
         elif 'email' in error_message:
             return Response(
                 {
+                    "ok": False,
                     "error": "Email already exists.",
-                    "error_pl": "Email już istnieje."
                 },
-                status=status.HTTP_409_CONFLICT
+                status=status.HTTP_200_OK
             )
         else:
             return Response(
                 {
+                    "ok": False,
                     "error": "User with these credentials already exists.",
                     "error_pl": "Użytkownik z tymi danymi już istnieje."
                 },
-                status=status.HTTP_409_CONFLICT
+                status=status.HTTP_200_OK
             )
 
     except Exception as e:
         return Response(
             {
+                "ok": False,
                 "error": "Registration failed. Please try again.",
                 "error_pl": "Rejestracja nie powiodła się. Spróbuj ponownie.",
                 "details": str(e)
             },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status=status.HTTP_200_OK
         )
 
 

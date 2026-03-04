@@ -49,10 +49,14 @@ function RegisterPage() {
         password: formData.password,
       });
 
-      if (response.status === 201) {
+      // backend returns 200 even for failures; check the ok flag
+      const data = response.data;
+      if (data.ok) {
         setSuccess('Registration successful! Logging you in...');
-        // checkAuth will be called in useEffect when success is set
         await checkAuth();
+      } else {
+        const errorMsg = data.error_pl || data.error || 'Registration failed';
+        setError(errorMsg);
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error ||
