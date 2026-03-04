@@ -49,19 +49,19 @@ api.interceptors.response.use(
     const status = error.response?.status;
 
     if (status === 401 || status === 403) {
-      if (status === 401) {
-        console.warn('Unauthorized request, user may need to log in');
-      }
+      // determine if this request was the login endpoint; we don't want to
+      // treat bad credentials as a global auth error.
+      const url = error.config?.url || '';
+      const isLoginEndpoint = url.endsWith('/auth/login') || url.endsWith('/auth/login/');
 
       const detail = error.response?.data?.detail || '';
       const isCsrfError = detail.toLowerCase().includes('csrf');
 
-      if (status === 403 && isCsrfError) {
-        console.error('CSRF token validation failed. Try refreshing the page.');
-      } else {
-        // If it's a 401, or a 403 that is NOT a CSRF error (e.g. Session invalid),
-        // dispatch a global event to let AuthContext know it needs to kick the user.
-        window.dispatchEvent(new Event('auth_error'));
+      if (!isLoginEndpoint) {
+        // dispatch event for everything except login attempts
+        if (!(status === 403 && isCsrfError)) {
+          window.dispatchEvent(new Event('auth_error'));
+        }
       }
     }
 

@@ -38,23 +38,20 @@ export function getCsrfToken() {
 export async function fetchCsrfToken() {
 
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/csrf/`, {
+    await fetch(`${API_BASE_URL}/auth/csrf/`, {
       method: 'GET',
       credentials: 'include',
     });
-    if (response.status !== 200) {
-      console.warn('Failed to fetch CSRF token');
-    }
   } catch (error) {
-    console.error('Failed to fetch CSRF token from authenticated endpoint:', error);
-    // Network or other error on /auth/me/; attempt the public CSRF endpoint as a fallback
+    // fallback to public endpoint; failure can safely be ignored as token will
+    // be retrieved on the first real request.
     try {
       await fetch(`${API_BASE_URL}/csrf/`, {
         method: 'GET',
         credentials: 'include',
       });
-    } catch (publicError) {
-      console.error('Failed to fetch CSRF token from public endpoint:', publicError);
+    } catch (_) {
+      /* ignore */
     }
   }
 }

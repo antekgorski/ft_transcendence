@@ -59,7 +59,6 @@ function RegisterPage() {
         err.response?.data?.error_pl ||
         'Registration failed';
       setError(errorMsg);
-      console.error('Registration error:', err);
       setLoading(false);
     }
   };
