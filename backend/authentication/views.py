@@ -98,10 +98,11 @@ def register(request):
     if not username or not email or not password:
         return Response(
             {
+                "ok": False,
                 "error": "username, email and password are required.",
                 "error_pl": "username, email i password są wymagane."
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_200_OK
         )
 
     # Email format validation
@@ -110,20 +111,22 @@ def register(request):
     except ValidationError:
         return Response(
             {
+                "ok": False,
                 "error": "Invalid email format.",
                 "error_pl": "Niepoprawny format email."
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_200_OK
         )
 
     # Password length validation
     if len(password) < 8:
         return Response(
             {
+                "ok": False,
                 "error": "Password must be at least 8 characters long.",
                 "error_pl": "Hasło musi mieć co najmniej 8 znaków."
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_200_OK
         )
 
     try:
@@ -151,6 +154,7 @@ def register(request):
 
         return Response(
             {
+                "ok": True,
                 "message": "User registered successfully.",
                 "message_pl": "Użytkownik zarejestrowany pomyślnie.",
                 "user": {
@@ -162,7 +166,7 @@ def register(request):
                     "created_at": user.created_at.isoformat()
                 }
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_200_OK
         )
 
     except IntegrityError as e:
@@ -170,36 +174,39 @@ def register(request):
         if 'username' in error_message:
             return Response(
                 {
+                    "ok": False,
                     "error": "Username already exists.",
                     "error_pl": "Nazwa użytkownika już istnieje."
                 },
-                status=status.HTTP_409_CONFLICT
+                status=status.HTTP_200_OK
             )
         elif 'email' in error_message:
             return Response(
                 {
+                    "ok": False,
                     "error": "Email already exists.",
-                    "error_pl": "Email już istnieje."
                 },
-                status=status.HTTP_409_CONFLICT
+                status=status.HTTP_200_OK
             )
         else:
             return Response(
                 {
+                    "ok": False,
                     "error": "User with these credentials already exists.",
                     "error_pl": "Użytkownik z tymi danymi już istnieje."
                 },
-                status=status.HTTP_409_CONFLICT
+                status=status.HTTP_200_OK
             )
 
     except Exception as e:
         return Response(
             {
+                "ok": False,
                 "error": "Registration failed. Please try again.",
                 "error_pl": "Rejestracja nie powiodła się. Spróbuj ponownie.",
                 "details": str(e)
             },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status=status.HTTP_200_OK
         )
 
 
@@ -233,12 +240,15 @@ def login(request):
     password = request.data.get('password')
 
     if not identifier or not password:
+        # keep validation on frontend as well; still return 200 so network
+        # panel doesn't mark as error
         return Response(
             {
+                "ok": False,
                 "error": "identifier and password are required.",
                 "error_pl": "identifier i hasło są wymagane.",
             },
-            status=status.HTTP_400_BAD_REQUEST,
+            status=status.HTTP_200_OK,
         )
 
     try:
@@ -248,28 +258,29 @@ def login(request):
     except User.DoesNotExist:
         return Response(
             {
-                "error": "Invalid credentials.",
-                "error_pl": "Nieprawidłowe dane logowania.",
+                "ok": False,
+                "error": "incorrect login details",
             },
-            status=status.HTTP_401_UNAUTHORIZED,
+            status=status.HTTP_200_OK,
         )
 
     if not user.is_active:
         return Response(
             {
+                "ok": False,
                 "error": "Account is disabled.",
                 "error_pl": "Konto jest zablokowane.",
             },
-            status=status.HTTP_403_FORBIDDEN,
+            status=status.HTTP_200_OK,
         )
 
     if not user.check_password(password):
         return Response(
             {
-                "error": "Invalid credentials.",
-                "error_pl": "Nieprawidłowe dane logowania.",
+                "ok": False,
+                "error": "incorrect login details",
             },
-            status=status.HTTP_401_UNAUTHORIZED,
+            status=status.HTTP_200_OK,
         )
 
     user.last_login = timezone.now()
@@ -289,6 +300,7 @@ def login(request):
 
     return Response(
         {
+            "ok": True,
             "message": "Login successful.",
             "message_pl": "Logowanie powiodło się.",
             "user": {
@@ -518,7 +530,6 @@ def set_avatar(request):
             return Response(
                 {
                     "error": "Invalid avatar. Choose 1-4 for default avatars or 'intra' for Intra photo.",
-                    "error_pl": "Nieprawidłowy avatar. Wybierz 1-4 dla domyślnych avatarów lub 'intra' dla zdjęcia z Intra."
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -625,9 +636,11 @@ def oauth_42_callback(request):
     """
     code = request.GET.get('code')
     if not code:
+        # could be user cancelled or redirect mismatch; include any error param
+        err = request.GET.get('error') or 'No authorization code provided'
         return Response(
-            {"error": "No authorization code provided"},
-            status=status.HTTP_400_BAD_REQUEST
+            {"ok": False, "error": err},
+            status=status.HTTP_200_OK,
         )
 
     # Exchange code for access token
@@ -659,10 +672,11 @@ def oauth_42_callback(request):
             logger.warning("42 OAuth token exchange failed: %s", str(e))
         return Response(
             {
+                "ok": False,
                 "error": "Failed to obtain access token from OAuth provider.",
                 "error_code": "oauth_token_exchange_failed",
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_200_OK,
         )
 
     # Get user info from 42 API
@@ -675,8 +689,8 @@ def oauth_42_callback(request):
         user_data = user_response.json()
     except requests.RequestException as e:
         return Response(
-            {"error": f"Failed to fetch user info: {str(e)}"},
-            status=status.HTTP_400_BAD_REQUEST
+            {"ok": False, "error": f"Failed to fetch user info: {str(e)}"},
+            status=status.HTTP_200_OK,
         )
 
     # Extract user data

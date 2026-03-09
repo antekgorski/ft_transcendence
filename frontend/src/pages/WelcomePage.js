@@ -42,20 +42,23 @@ function WelcomePage() {
         password: formData.password,
       });
 
-      if (response.status === 200) {
-        const data = response.data;
+      // backend returns 200 even for failures; check the ok flag
+      const data = response.data;
+      if (data.ok) {
         localStorage.setItem('user', JSON.stringify(data.user));
         setSuccess('Login successful!');
 
         await checkAuth();
         navigate('/');
+      } else {
+        const errorMsg = data.error_pl || data.error || 'Login failed';
+        setError(errorMsg);
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error ||
         err.response?.data?.error_pl ||
         'Login failed';
       setError(errorMsg);
-      console.error('Login error:', err);
     } finally {
       setLoading(false);
     }
