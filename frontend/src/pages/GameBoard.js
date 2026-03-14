@@ -24,6 +24,9 @@ const CELL_TYPES = {
   MISS: 'miss',
 };
 
+// Shared guard across re-renders/remounts to prevent duplicate AI game creation POSTs.
+let aiGameCreateInFlight = null;
+
 // Funkcja pomocnicza tworząca pustą planszę 10x10.
 const createEmptyBoard = () => {
   // Tworzymy tablicę wierszy o długości BOARD_SIZE.
@@ -488,11 +491,24 @@ function Body() {
         let newGameId = null;
         try {
           setIsCreatingGame(true);
-          const response = await axios.post(
+
+          // If another initialize flow is already creating an AI game,
+          // wait for it and then re-run initialization from active game state.
+          if (aiGameCreateInFlight) {
+            await aiGameCreateInFlight.catch(() => null);
+            setIsCreatingGame(false);
+            initializingRef.current = false;
+            await initializeGame();
+            return;
+          }
+
+          aiGameCreateInFlight = axios.post(
             `${API_BASE_URL}/games/`,
             { game_type: 'ai' },
             { withCredentials: true }
           );
+
+          const response = await aiGameCreateInFlight;
           newGameId = response.data.id;
           setGameId(newGameId);
           setGameInitialized(true);
@@ -647,6 +663,8 @@ function Body() {
 
           setIsCreatingGame(false);
           throw createErr;
+        } finally {
+          aiGameCreateInFlight = null;
         }
         setIsCreatingGame(false);
 
