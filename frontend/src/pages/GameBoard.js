@@ -2520,6 +2520,7 @@ function Body() {
               className="flex flex-col gap-2 sm:flex-row"
             >
               <input
+                id="type_message"
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
