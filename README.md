@@ -75,7 +75,42 @@ and a sleek UI.
 
 # Resources
 
-### Infrastructure
+## AI Usage
+
+During the development of this project we used AI tools as a **supporting resource** to improve productivity and assist with research and documentation, in accordance with the ft_transcendence project guidelines.
+
+AI was mainly used to reduce repetitive work and help explore possible technical solutions. It was **not used to blindly generate large parts of the project code**. All important architectural and implementation decisions were made by the team and every piece of code included in the project was reviewed and understood by the developers.
+
+### Tasks where AI was helpful
+
+AI tools were used for several supporting tasks, including:
+
+- **Explaining technical concepts** such as WebSockets, authentication flows, and containerization with Docker.
+- **Debugging assistance**, suggesting possible causes for configuration or runtime errors.
+- **Documentation support**, helping structure and improve the clarity of the README and technical descriptions.
+- **Command and configuration reminders**, for example Docker commands, Git usage, and environment configuration.
+
+### Validation process
+
+Following the project guidelines, every AI suggestion was:
+
+- carefully reviewed by the team,
+- tested in the development environment,
+- discussed before being integrated into the codebase.
+
+Only solutions that were **fully understood by the team members** were implemented in the final project.
+
+### Tools used
+
+Examples of AI tools used during development include:
+
+- ChatGPT  
+- GitHub Copilot  
+- AI-assisted code suggestions available in development environments
+
+AI was used strictly as a **productivity aid**, while the design, architecture, and implementation of the project were done by the team.
+
+## Infrastructure
 
 ```mermaid
 flowchart LR
