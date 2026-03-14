@@ -97,9 +97,9 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<WelcomePage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="/terms-of-service" element={<TermsOfService />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
   }
@@ -111,6 +111,8 @@ function AppContent() {
       <Route path="/profile/:userId" element={<UserProfilePage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route path="/leaderboard" element={<LeaderboardPage />} />
+      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+      <Route path="/terms-of-service" element={<TermsOfService />} />
       <Route path="*" element={<Navigate to="/menu" replace />} />
     </Routes>
   );

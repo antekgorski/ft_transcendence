@@ -1,259 +1,137 @@
 # User Login Process
 
-## Login Flow Diagram
+This document describes the **currently implemented** login/session behavior.
+
+## Login Flow Diagram (Implemented)
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant Frontend as Frontend<br/>(React)
-    participant Backend as Backend<br/>(Django)
-    participant DB as Database<br/>(PostgreSQL)
-    participant OAuth as OAuth Provider<br/>(42 Intra)
+    participant Frontend as Frontend (React)
+    participant Backend as Backend (Django)
+    participant Cache as Redis Cache
+    participant DB as Database
 
-    Note over User,OAuth: Standard Login Flow
-    
-    User->>Frontend: Enter credentials<br/>(username/email, password)
-    Frontend->>Frontend: Validate input fields<br/>- Check not empty<br/>- Basic format validation
-    
-    Frontend->>Backend: POST /api/auth/login<br/>{identifier, password}
-    
-    Backend->>Backend: Sanitize inputs
-    
-    Backend->>DB: SELECT User WHERE<br/>username = identifier OR email = identifier
-    DB-->>Backend: User record or NULL
-    
-    alt User not found
-        Backend->>Backend: Delay response (prevent timing attacks)
-        Backend-->>Frontend: 401 Unauthorized
-        Frontend-->>User: Show error: Invalid credentials
-    else User found
-        Backend->>Backend: Verify password hash<br/>(compare with stored hash)
-        
-        alt Password invalid
-            Backend->>Backend: Delay response
-            Backend-->>Frontend: 401 Unauthorized
-            Frontend-->>User: Show error: Invalid credentials
-        else Password valid
-            Backend->>DB: Check is_active status
-            DB-->>Backend: User status
-            
-            alt Account inactive
-                Backend-->>Frontend: 403 Forbidden
-                Frontend-->>User: Show error: Account disabled
-            else Account active
-                Backend->>DB: UPDATE User<br/>SET last_login = CURRENT_TIMESTAMP
-                DB-->>Backend: Updated
-                
-                Backend->>Backend: Create session<br/>(establish session)
-                
-                Backend->>DB: SELECT PlayerStats<br/>WHERE user_id = user.id
-                DB-->>Backend: Player statistics
-                
-                Backend-->>Frontend: Set session cookie<br/>(HttpOnly, Secure, SameSite)<br/>200 OK {user_data, stats}
-                Frontend->>Frontend: Update app state<br/>(user info, stats)
-                Frontend-->>User: Redirect to dashboard
-            end
-        end
-    end
+    User->>Frontend: Fill login form (username + password)
+    Frontend->>Backend: POST /api/auth/login/ {identifier, password}
+    Backend->>DB: Find user by username/email (case-insensitive)
 
-    Note over User,OAuth: OAuth Login Flow (42 Intra)
-    
-    User->>Frontend: Click "Login with 42"
-    Frontend->>OAuth: Redirect to 42 OAuth<br/>(with client_id, redirect_uri)
-    OAuth->>User: Show 42 login page
-    User->>OAuth: Enter 42 credentials
-    OAuth->>OAuth: Validate credentials
-    OAuth-->>Frontend: Redirect with authorization code
-    
-    Frontend->>Backend: POST /api/auth/oauth/callback<br/>{code, provider: '42'}
-    Backend->>OAuth: POST /oauth/token<br/>(exchange code for access token)
-    OAuth-->>Backend: Access token + refresh token
-    
-    Backend->>OAuth: GET /api/v2/me<br/>(fetch user profile)
-    OAuth-->>Backend: User profile data
-    
-    Backend->>Backend: Extract oauth_id from profile
-    
-    Backend->>DB: SELECT User WHERE<br/>oauth_provider = '42'<br/>AND oauth_id = oauth_user_id
-    DB-->>Backend: User record or NULL
-    
-    alt OAuth user not found
-        Backend-->>Frontend: 404 Not Found<br/>{error: "Account not registered"}
-        Frontend-->>User: Show: "Please register first"<br/>or auto-register
-    else OAuth user found
-        Backend->>DB: Check is_active status
-        DB-->>Backend: User status
-        
-        alt Account inactive
-            Backend-->>Frontend: 403 Forbidden
-            Frontend-->>User: Show error: Account disabled
-        else Account active
-            Backend->>DB: UPDATE User<br/>SET last_login = CURRENT_TIMESTAMP<br/>SET avatar_url = latest_42_avatar
-            DB-->>Backend: Updated
-            
-            Backend->>Backend: Create session
-            
-            Backend->>DB: SELECT PlayerStats<br/>WHERE user_id = user.id
-            DB-->>Backend: Player statistics
-            
-            Backend-->>Frontend: Set session cookie<br/>(HttpOnly, Secure, SameSite)<br/>200 OK {user_data, stats}
-            Frontend->>Frontend: Update app state
-            Frontend-->>User: Redirect to dashboard
-        end
+    alt Missing identifier/password
+        Backend-->>Frontend: 400 {error}
+    else User not found or password invalid
+        Backend-->>Frontend: 401 {error: Invalid credentials}
+    else Account inactive
+        Backend-->>Frontend: 403 {error: Account is disabled}
+    else Success
+        Backend->>DB: UPDATE users.last_login
+        Backend->>Cache: Clear previously tracked sessions for user
+        Backend->>Backend: Create new Django session (sessionid cookie)
+        Backend->>Cache: Track current session key for user
+        Backend-->>Frontend: 200 {message, user}
+        Frontend->>Backend: GET /api/auth/me/
+        Backend-->>Frontend: 200 {id, username, email, display_name, avatar fields, is_online}
+        Frontend-->>User: Navigate to authenticated area
     end
 ```
 
-## Process Breakdown
-
-### Frontend Responsibilities
-
-1. **Input Handling**
-   - Accept username or email as identifier
-   - Mask password input
-   - Basic client-side validation (not empty)
-   - Show loading state during authentication
-
-2. **OAuth Flow**
-   - Generate OAuth redirect URL with proper parameters
-   - Handle OAuth callback and extract authorization code
-   - Manage state parameter for CSRF protection
-
-3. **Session Management**
-   - Receive Session via HttpOnly cookie (automatic with credentials)
-   - Configure axios/fetch with `credentials: 'include'` for cookie transmission
-   - Handle token expiration and refresh logic
-   - Logout by calling backend to clear cookie
-
-4. **User Experience**
-   - Display appropriate error messages
-   - Provide "Forgot Password?" link
-   - Offer both standard and OAuth login options
-   - Show login success and redirect smoothly
-
-### Backend Responsibilities
-
-1. **Security**
-   - Sanitize all inputs
-   - Use constant-time comparison for passwords (prevent timing attacks)
-   - Implement rate limiting (e.g., max 5 attempts per minute per IP)
-   - Add deliberate delay on failed attempts
-   - Generate secure Sessions with proper expiration
-   - Set tokens in HttpOnly, Secure, SameSite=Strict cookies
-
-2. **Authentication**
-   - Verify password against stored hash
-   - Handle both username and email as login identifiers
-   - Check account status (active/inactive)
-   - Validate OAuth tokens with provider
-
-3. **OAuth Processing**
-   - Exchange authorization code for access token
-   - Fetch user profile from OAuth provider
-   - Match OAuth user to database record
-   - Update avatar and last login time
-
-4. **Response Data**
-   - Set Session in HttpOnly cookie
-   - Include essential user data (id, username, email, avatar) in response body
-   - Attach player statistics
-   - Set appropriate HTTP status codes
-
-### Database Operations
-
-#### On Successful Login
-```sql
--- Update last login timestamp
-UPDATE User 
-SET last_login = CURRENT_TIMESTAMP
-WHERE id = user_id;
-
--- For OAuth: also update avatar
-UPDATE User 
-SET last_login = CURRENT_TIMESTAMP,
-    avatar_url = new_avatar_url
-WHERE id = user_id;
-
--- Fetch user data
-SELECT id, username, email, display_name, avatar_url, language
-FROM User
-WHERE id = user_id;
-
--- Fetch player statistics
-SELECT games_played, games_won, games_lost, 
-       total_shots, total_hits, accuracy_percentage,
-       longest_win_streak, current_win_streak
-FROM PlayerStats
-WHERE user_id = user_id;
-```
-
-## Security Considerations
-
-1. **Rate Limiting**: Maximum 5 login attempts per IP per minute
-2. **Account Lockout**: Temporary lock after 10 failed attempts
-3. **Password Verification**: Use constant-time comparison
-4. **Generic Error Messages**: Don't reveal if username exists
-5. **Session Security**: 
-   - Store in HttpOnly, Secure, SameSite=Strict cookies
-   - Not accessible via JavaScript (protects against XSS attacks)
-   - Short expiration time (24 hours)
-   - Include user claims for authorization
-6. **CSRF Protection**: Implement CSRF tokens for cookie-based authentication
-7. **OAuth State Parameter**: Prevent CSRF attacks during OAuth flow
-8. **HTTPS Only**: All authentication over encrypted connection
-
-## Error Handling
-
-| Error Condition | HTTP Status | Frontend Action |
-|----------------|-------------|-----------------|
-| Invalid credentials | 401 Unauthorized | Show "Invalid username or password" |
-| Account disabled | 403 Forbidden | Show "Account has been disabled" |
-| Too many attempts | 429 Too Many Requests | Show "Too many attempts, try again later" |
-| OAuth not registered | 404 Not Found | Redirect to registration with OAuth |
-| Server error | 500 Internal Server Error | Show "Login failed, try again" |
-| OAuth provider error | 502 Bad Gateway | Show "42 login unavailable" |
-
-## Session Management
-
-### HttpOnly Cookie Configuration
-
-**Backend Cookie Settings**:
-- `key: sessionid'
-- `httponly`: true (not accessible via JavaScript for XSS protection)
-- `secure`: true (only sent over HTTPS)
-- `samesite`: 'Strict' (CSRF protection)
-- `max_age`: 86400 seconds (24 hours)
-
-**Frontend Configuration**:
-- Enable `withCredentials` for HTTP client (axios/fetch)
-- Set `credentials: 'include'` to automatically send cookies
-- No manual token management needed (handled by browser)
-
-**Logout Process**:
-- Backend sets cookie with empty value and max_age=0
-- Browser automatically deletes expired cookie
-- Frontend redirects to login page
-
-### Session Management Strategy
+## OAuth 42 Login Flow (Implemented)
 
 ```mermaid
 sequenceDiagram
-    participant Frontend
-    participant Backend
-    participant DB
+    actor User
+    participant Frontend as Frontend (React)
+    participant Backend as Backend (Django)
+    participant OAuth as 42 Intra
 
-    Frontend->>Backend: API request with session
-    Backend->>Backend: Verify token
-    
-    alt Token expired
-        Backend-->>Frontend: 401 Unauthorized
-        Frontend->>Backend: POST /api/auth/refresh<br/>(with refresh token)
-        Backend->>DB: Verify refresh token
-        DB-->>Backend: Valid
-        Backend->>Backend: Refresh session
-        Backend-->>Frontend: New Session
-        Frontend->>Frontend: Update stored token
-        Frontend->>Backend: Retry original request
-    else Token valid
-        Backend-->>Frontend: Success response
+    User->>Frontend: Click "Sign in with 42"
+    Frontend->>Backend: GET /api/auth/oauth/42/start/
+    Backend-->>User: 302 redirect to 42 authorize URL
+    User->>OAuth: Authenticate and authorize
+    OAuth-->>Backend: GET /api/auth/oauth/42/callback/?code=...
+
+    Backend->>OAuth: Exchange code for access token
+    Backend->>OAuth: Fetch user profile (/v2/me)
+    Backend->>Backend: Find user by (oauth_provider='42', oauth_id)
+
+    alt OAuth user not found and email already exists
+        Backend-->>User: 400 {error}
+    else OAuth user found or created
+        Backend->>Backend: Optionally download/store Intra avatar (max 2MB, trusted domain)
+        Backend->>Backend: Update last_login
+        Backend->>Backend: Create session + track single active session
+        Backend-->>User: HTML response with JS redirect to '/'
+        Frontend->>Backend: GET /api/auth/me/
+        Backend-->>Frontend: 200 user data
     end
 ```
+
+## Implemented Endpoints
+
+- `POST /api/auth/login/`
+  - Body: `{ identifier, password }` (`identifier` can be username or email)
+  - Success: `200` with `{ message, user }`
+  - Errors: `400`, `401`, `403`
+- `GET /api/auth/me/`
+  - If not logged in: `200 { "user": null }`
+  - If logged in: `200` with flat user object:
+    - `id`, `username`, `email`, `display_name`
+    - `avatar_url`, `custom_avatar_url`, `intra_avatar_url`
+    - `is_online`
+- `POST /api/auth/logout/`
+  - Flushes session, returns `200 { message }`
+- `GET /api/auth/oauth/42/start/`
+  - Redirects browser to 42 OAuth authorize URL
+- `GET /api/auth/oauth/42/callback/?code=...`
+  - Handles token exchange, login/registration, session creation, then redirects to `/`
+
+## Frontend Behavior (Implemented)
+
+- Login form sends `POST /auth/login/` with `identifier` from username input.
+- On login success:
+  - calls `checkAuth()` (`GET /auth/me/`)
+  - navigates to `/`
+- OAuth login uses browser redirect to `/api/auth/oauth/42/start/`.
+- API client uses `withCredentials: true` so browser sends session cookies.
+- CSRF token is fetched on app startup (`GET /api/auth/csrf/`) and attached to state-changing requests.
+
+## Session & Cookie Behavior (Implemented)
+
+- Session is Django cookie-based (`sessionid`), server-side data stored in cache backend.
+- `SESSION_COOKIE_AGE = 86400` (24h).
+- `SESSION_COOKIE_HTTPONLY = true`.
+- `SESSION_COOKIE_SAMESITE = 'Lax'`.
+- `SESSION_COOKIE_SECURE` is environment-driven (not always `true` in local/dev).
+- CSRF cookie name: `csrftoken`, read by frontend and sent as `X-CSRFToken` header.
+
+## Single-Session Enforcement (Implemented)
+
+- Before login/register/OAuth-login, backend clears previously tracked sessions for that user.
+- Active session keys are tracked in cache under `active_sessions_<user_id>`.
+- A `force_logout` websocket event is broadcast to the user group when older sessions are cleared.
+
+## Security Notes: Implemented vs Not Implemented
+
+### Implemented
+
+1. Password hashing via Django hashers (`set_password` / `check_password`)
+2. Generic invalid-credentials message for missing user/wrong password (`401`)
+3. Cookie + CSRF protection for session-based auth
+4. OAuth avatar download guards (HTTPS + allowed domain + size limit)
+
+### Not Implemented Yet
+
+1. Login rate limiting (e.g., `429`)
+2. Failed-attempt lockout policy
+3. Deliberate timing delay on failed auth paths
+4. Refresh-token flow (system uses session cookies, not access/refresh JWT tokens)
+
+## Error Handling (Implemented)
+
+| Error Condition | HTTP Status | Notes |
+|----------------|-------------|-------|
+| Missing identifier or password | 400 | `identifier and password are required.` |
+| Invalid credentials | 401 | Same message for unknown user and wrong password |
+| Account disabled (`is_active = false`) | 403 | Login blocked |
+| OAuth callback missing code | 400 | `No authorization code provided` |
+| OAuth token/profile fetch failure | 400 | OAuth provider communication failure |
+| OAuth email conflict on first link | 400 | Existing email without OAuth link |

@@ -207,11 +207,11 @@ flowchart LR
 
 ```mermaid
 erDiagram
-    User ||--o{ PlayerStats : "has"
+    User ||--|| PlayerStats : "has stats"
     User ||--o{ Game : "player_1"
     User ||--o{ Game : "player_2"
     User ||--o{ Game : "winner"
-    User ||--o{ Friendship : "initiates"
+    User ||--o{ Friendship : "requests"
     User ||--o{ Friendship : "receives"
     User ||--o{ Notification : "receives"
     
@@ -220,15 +220,19 @@ erDiagram
         string username UK
         string email UK
         string password_hash
-        string display_name
-        string avatar_url
+        string display_name "nullable"
+        string avatar_url "nullable"
+        string custom_avatar_url "nullable"
+        string intra_avatar_url "nullable"
         string language
-        string oauth_provider
-        string oauth_id
+        string oauth_provider "nullable"
+        string oauth_id "nullable"
         boolean is_active
+        boolean is_staff
+        boolean is_superuser
         json notification_preferences
         timestamp created_at
-        timestamp last_login
+        timestamp last_login "nullable"
     }
     
     Notification {
@@ -239,15 +243,15 @@ erDiagram
         text message
         json data
         boolean is_read
-        timestamp read_at
+        timestamp read_at "nullable"
         timestamp created_at
-        timestamp expires_at
-        string action_url
+        timestamp expires_at "nullable"
+        string action_url "nullable"
     }
     
     PlayerStats {
         uuid id PK
-        uuid user_id FK
+        uuid user_id FK UK
         int games_played
         int games_won
         int games_lost
@@ -266,7 +270,7 @@ erDiagram
         uuid player_2_id FK "null for AI opponent"
         string game_type "pvp|ai"
         string status "pending|active|completed|forfeited"
-        uuid winner_id FK
+        uuid winner_id FK "nullable"
         int duration_seconds
         int player_1_shots
         int player_1_hits
