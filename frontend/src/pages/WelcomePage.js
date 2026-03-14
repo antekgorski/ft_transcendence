@@ -52,12 +52,11 @@ function WelcomePage() {
         await checkAuth();
         navigate('/');
       } else {
-        const errorMsg = data.error_pl || data.error || 'Login failed';
+        const errorMsg = data.error || 'Login failed';
         setError(errorMsg);
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error ||
-        err.response?.data?.error_pl ||
         'Login failed';
       setError(errorMsg);
     } finally {

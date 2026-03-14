@@ -18,3 +18,4 @@ copilot-instructions.md
 .coverage
 .deploy_config
 prod.env
+backend/staticfiles/

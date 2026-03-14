@@ -99,8 +99,7 @@ def register(request):
         return Response(
             {
                 "ok": False,
-                "error": "username, email and password are required.",
-                "error_pl": "username, email i password są wymagane."
+                "error": "Username, email and password are required.",
             },
             status=status.HTTP_200_OK
         )
@@ -113,7 +112,6 @@ def register(request):
             {
                 "ok": False,
                 "error": "Invalid email format.",
-                "error_pl": "Niepoprawny format email."
             },
             status=status.HTTP_200_OK
         )
@@ -124,7 +122,6 @@ def register(request):
             {
                 "ok": False,
                 "error": "Password must be at least 8 characters long.",
-                "error_pl": "Hasło musi mieć co najmniej 8 znaków."
             },
             status=status.HTTP_200_OK
         )
@@ -156,7 +153,6 @@ def register(request):
             {
                 "ok": True,
                 "message": "User registered successfully.",
-                "message_pl": "Użytkownik zarejestrowany pomyślnie.",
                 "user": {
                     "id": str(user.id),
                     "username": user.username,
@@ -176,7 +172,6 @@ def register(request):
                 {
                     "ok": False,
                     "error": "Username already exists.",
-                    "error_pl": "Nazwa użytkownika już istnieje."
                 },
                 status=status.HTTP_200_OK
             )
@@ -193,7 +188,6 @@ def register(request):
                 {
                     "ok": False,
                     "error": "User with these credentials already exists.",
-                    "error_pl": "Użytkownik z tymi danymi już istnieje."
                 },
                 status=status.HTTP_200_OK
             )
@@ -203,7 +197,6 @@ def register(request):
             {
                 "ok": False,
                 "error": "Registration failed. Please try again.",
-                "error_pl": "Rejestracja nie powiodła się. Spróbuj ponownie.",
                 "details": str(e)
             },
             status=status.HTTP_200_OK
@@ -245,8 +238,7 @@ def login(request):
         return Response(
             {
                 "ok": False,
-                "error": "identifier and password are required.",
-                "error_pl": "identifier i hasło są wymagane.",
+                "error": "Identifier and password are required.",
             },
             status=status.HTTP_200_OK,
         )
@@ -259,7 +251,7 @@ def login(request):
         return Response(
             {
                 "ok": False,
-                "error": "incorrect login details",
+                "error": "Incorrect login details",
             },
             status=status.HTTP_200_OK,
         )
@@ -269,7 +261,6 @@ def login(request):
             {
                 "ok": False,
                 "error": "Account is disabled.",
-                "error_pl": "Konto jest zablokowane.",
             },
             status=status.HTTP_200_OK,
         )
@@ -278,7 +269,7 @@ def login(request):
         return Response(
             {
                 "ok": False,
-                "error": "incorrect login details",
+                "error": "Incorrect login details",
             },
             status=status.HTTP_200_OK,
         )
@@ -302,7 +293,6 @@ def login(request):
         {
             "ok": True,
             "message": "Login successful.",
-            "message_pl": "Logowanie powiodło się.",
             "user": {
                 "id": str(user.id),
                 "username": user.username,
@@ -319,10 +309,6 @@ def login(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_current_user(request):
-    """
-    Endpoint sprawdzający aktualną sesję użytkownika.
-    Zwraca dane zalogowanego użytkownika lub null jeśli niezalogowany.
-    """
     user_id = request.session.get('user_id')
     
     if not user_id:
@@ -352,7 +338,6 @@ def get_current_user(request):
             status=status.HTTP_200_OK,
         )
     except User.DoesNotExist:
-        # Sesja ma nieprawidłowe dane - wyczyść sesję
         request.session.flush()
         return Response(
             {
@@ -441,15 +426,10 @@ def csrf(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def logout(request):
-    """
-    Endpoint wylogowujący użytkownika.
-    Usuwa sesję użytkownika.
-    """
     request.session.flush()
     return Response(
         {
             "message": "Logout successful.",
-            "message_pl": "Wylogowanie powiodło się.",
         },
         status=status.HTTP_200_OK,
     )
@@ -472,7 +452,6 @@ def set_avatar(request):
                 return Response(
                     {
                         "error": "Only 42 OAuth users can use their Intra photo.",
-                        "error_pl": "Tylko użytkownicy 42 OAuth mogą używać swoich zdjęć z Intra."
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
@@ -487,7 +466,6 @@ def set_avatar(request):
             return Response(
                 {
                     "message": "Avatar changed to Intra photo.",
-                    "message_pl": "Avatar zmieniony na zdjęcie z Intra.",
                     "avatar_url": user.avatar_url.url if user.avatar_url else None
                 },
                 status=status.HTTP_200_OK
@@ -504,14 +482,12 @@ def set_avatar(request):
             return Response(
                 {
                     "message": "Avatar changed to custom upload.",
-                    "message_pl": "Avatar zmieniony na własne zdjęcie.",
                     "avatar_url": user.avatar_url.url if user.avatar_url else None
                 },
                 status=status.HTTP_200_OK
             )
         
         elif isinstance(avatar, int) and 1 <= avatar <= 4:
-            # Set to default avatar
             # Set to default avatar
             # For default avatars, we are storing a relative path string in the ImageField
             # This is technically valid as Django treats it as a path
@@ -521,7 +497,6 @@ def set_avatar(request):
             return Response(
                 {
                     "message": "Avatar changed successfully.",
-                    "message_pl": "Avatar zmieniony pomyślnie.",
                     "avatar_url": user.avatar_url.url if user.avatar_url else None
                 },
                 status=status.HTTP_200_OK
@@ -538,7 +513,6 @@ def set_avatar(request):
         return Response(
             {
                 "error": "User not found.",
-                "error_pl": "Użytkownik nie znaleziony."
             },
             status=status.HTTP_404_NOT_FOUND
         )
@@ -557,8 +531,7 @@ def update_profile(request):
         if not display_name:
             return Response(
                 {
-                    "error": "display_name is required.",
-                    "error_pl": "display_name jest wymagane."
+                    "error": "Display name is required.",
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -566,8 +539,7 @@ def update_profile(request):
         if len(display_name.strip()) == 0:
             return Response(
                 {
-                    "error": "display_name cannot be empty.",
-                    "error_pl": "display_name nie może być puste."
+                    "error": "Display name cannot be empty.",
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -578,7 +550,6 @@ def update_profile(request):
         return Response(
             {
                 "message": "Profile updated successfully.",
-                "message_pl": "Profil zaktualizowany pomyślnie.",
                 "user": {
                     "id": str(user.id),
                     "username": user.username,
@@ -595,7 +566,6 @@ def update_profile(request):
         return Response(
             {
                 "error": "Failed to update profile.",
-                "error_pl": "Nie udało się zaktualizować profilu.",
                 "details": str(e)
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -711,7 +681,6 @@ def oauth_42_callback(request):
             return Response(
                 {
                     "error": "User with this email already exists",
-                    "error_pl": "Użytkownik z tym emailem już istnieje"
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )

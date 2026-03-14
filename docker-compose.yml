@@ -61,7 +61,7 @@ services:
       - redis
     networks:
       - transcendence_network
-    command: daphne -b 0.0.0.0 -p 8000 project_config.asgi:application
+    command: sh -c "python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p 8000 project_config.asgi:application"
 
   # Frontend (React Dev Server with Hot Reload)
   frontend:

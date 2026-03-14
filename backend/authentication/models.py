@@ -108,13 +108,17 @@ class User(AbstractBaseUser):
             if self.avatar_url and (not update_fields or 'avatar_url' in update_fields):
                 # Only optimize if it's a new upload (different from old) or if it's a new user
                 if not self.pk or self.avatar_url != old_avatar:
+                    is_default_avatar = any(
+                        str(self.avatar_url.name).endswith(choice)
+                        for choice in self.AVATAR_CHOICES
+                    )
                     # Skip if avatar_url is just a reference to intra or custom (already optimized)
                     is_reference = False
                     if self.intra_avatar_url and self.avatar_url.name == self.intra_avatar_url.name:
                         is_reference = True
                     if self.custom_avatar_url and self.avatar_url.name == self.custom_avatar_url.name:
                         is_reference = True
-                    if not is_reference:
+                    if not is_reference and not is_default_avatar:
                         self._optimize_image(self.avatar_url, 'avatar')
             
             # Optimize intra_avatar_url

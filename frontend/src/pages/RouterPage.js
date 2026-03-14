@@ -145,6 +145,7 @@ function Body() {
     pendingInvite, setPendingInvite, clearPendingInvite,
     inviteRejectedBy, clearInviteRejectedBy,
     receivedInvite,
+    clearReceivedInvite,
   } = useContext(GameContext);
 
   const [showPlayerList, setShowPlayerList] = useState(false);
@@ -232,6 +233,24 @@ function Body() {
     }
   };
 
+  const handlePlayAgainstAi = async (e) => {
+    if (isBusy) {
+      e.preventDefault();
+      return;
+    }
+
+    // If user has an incoming PvP invite, reject it automatically before starting AI.
+    if (receivedInvite?.inviteId) {
+      try {
+        await api.post(`/games/invite/${receivedInvite.inviteId}/reject/`);
+      } catch {
+        // Best effort; proceed to AI flow even if invite already expired/handled.
+      } finally {
+        clearReceivedInvite();
+      }
+    }
+  };
+
   const isBusy = !!pendingInvite;
 
   return (
@@ -245,7 +264,7 @@ function Body() {
         <Link
           to="/game"
           state={{ startAI: true }}
-          onClick={isBusy ? (e) => e.preventDefault() : undefined}
+          onClick={handlePlayAgainstAi}
           className={`flex w-full items-center justify-center rounded-lg bg-emerald-500 px-6 py-3 text-center text-base font-bold text-white shadow-lg transition-colors hover:bg-emerald-600 sm:py-4 sm:text-lg lg:text-xl${isBusy ? ' pointer-events-none opacity-50' : ''}`}
         >
           Play Against AI
