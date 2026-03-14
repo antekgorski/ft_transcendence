@@ -75,7 +75,7 @@ and a sleek UI.
 
 # Resources
 
-##The following official documentation and technical resources were used during the development of this project:
+## The following official documentation and technical resources were used during the development of this project:
 
 ### Frameworks and Technologies
 - Django Documentation – https://www.djangoproject.com/
