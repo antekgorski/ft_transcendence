@@ -48,7 +48,7 @@ logs:
 
 clean:
 	$(DOCKER_COMPOSE) down -v
-	docker run --rm -v "$(PWD)/backend:/workspace" alpine sh -c "rm -rf /workspace/staticfiles"
+	docker run --rm -v "$(CURDIR)/backend:/workspace" alpine sh -c "rm -rf /workspace/staticfiles"
 	docker system prune -f
 
 re: clean build up

@@ -51,6 +51,16 @@ jobs:
           ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
+      - name: Create prod.env
+        run: |
+          if [ -z "${{ secrets.PROD_ENV_FILE }}" ]; then
+            echo "PROD_ENV_FILE secret is not set"
+            exit 1
+          fi
+
+          umask 077
+          printf '%s' "${{ secrets.PROD_ENV_FILE }}" > prod.env
+
       - name: Upload deploy files
         run: |
           ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_PATH'"
