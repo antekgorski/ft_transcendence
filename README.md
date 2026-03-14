@@ -451,7 +451,7 @@ Scoring rule used in this section: **Major = 2 points**, **Minor = 1 point**.
 
 # Individual Contributions
 
-## Dominik Modrzejewski (dmodrzej / Dominik / hipoliciak)
+## Dominik Modrzejewski (dmodrzej)
 
 - **Scope:** Backend architecture, infrastructure, security, and core game mechanics.
 - Implemented and stabilized Django backend logic (including race-condition fixes and error handling improvements).
@@ -466,7 +466,7 @@ Scoring rule used in this section: **Major = 2 points**, **Minor = 1 point**.
 - Prepared infrastructure documentation and architecture diagrams (README + Mermaid).
 - **Challenges faced and resolution:** Real-time synchronization and race conditions in multiplayer flow were resolved through stricter backend state transitions, Redis coordination, and iterative WebSocket event handling refinements.
 
-## Łukasz Tomaszewski (ltomasze / Lukasz)
+## Łukasz Tomaszewski (ltomasze)
 
 - **Scope:** Authentication backend, database integration, and matchmaking.
 - Implemented backend endpoints for registration and login flows.
@@ -476,7 +476,7 @@ Scoring rule used in this section: **Major = 2 points**, **Minor = 1 point**.
 - Contributed Docker Compose configuration fixes for reliable local/dev startup.
 - **Challenges faced and resolution:** Matching backend auth/matchmaking behavior with frontend expectations required endpoint and payload adjustments; this was solved through iterative API updates and integration testing.
 
-## Grzegorz Buczyński (gbuczyns / GrzegorzBuczynski / Surface)
+## Grzegorz Buczyński (gbuczyns)
 
 - **Scope:** Frontend UI structure, routing, and leaderboard experience.
 - Implemented leaderboard functionality and related UI presentation.
@@ -487,7 +487,7 @@ Scoring rule used in this section: **Major = 2 points**, **Minor = 1 point**.
 - Contributed Docker/environment configuration fixes (.env handling and port consistency).
 - **Challenges faced and resolution:** Maintaining stable UI behavior while logic evolved was addressed by simplifying component flow and applying incremental refactors to state/effect logic.
 
-## Michał (mbany / Michalkcb)
+## Michał Bany (mbany)
 
 - **Scope:** Friends system, frontend auth flow, and project structure contributions.
 - Implemented friend-related features: user search and add-friend flow.
@@ -496,7 +496,7 @@ Scoring rule used in this section: **Major = 2 points**, **Minor = 1 point**.
 - Contributed to project description and role-distribution documentation.
 - **Challenges faced and resolution:** Integrating social/auth/game flows in a consistent UX required coordination across screens and endpoints; solved through staged integration and UI/flow corrections.
 
-## Antoni Górski (agorski / Antoni Gorski / antekgorski)
+## Antoni Górski (agorski)
 
 - **Scope:** User-facing features, admin-related work, and 42 authentication integration.
 - Implemented user avatar functionality.
