@@ -75,6 +75,19 @@ and a sleek UI.
 
 # Resources
 
+##The following official documentation and technical resources were used during the development of this project:
+
+### Frameworks and Technologies
+- Django Documentation – https://www.djangoproject.com/
+- React Documentation – https://react.dev/
+- Docker Documentation – https://docs.docker.com/
+- MDN Web Docs – https://developer.mozilla.org/
+
+### Authentication and APIs
+- OAuth 2.0 Specification (RFC 6749) – https://datatracker.ietf.org/doc/html/rfc6749#section-1.3.4
+- 42 API Documentation – Web Application Flow – https://api.intra.42.fr/apidoc/guides/web_application_flow#redirect-urls
+
+
 ## AI Usage
 
 During the development of this project we used AI tools as a **supporting resource** to improve productivity and assist with research and documentation, in accordance with the ft_transcendence project guidelines.
