@@ -1,233 +1,85 @@
 # Security Implementation Guide
 
-## Overview
-This document describes the security measures implemented in the Battleship application, including httpOnly cookies, session-based authentication, CSRF protection, and secure communication over HTTPS.
+This document reflects the **current implementation** in backend/frontend config.
 
-## Security Features Implemented
+## Authentication & Session Security (Implemented)
 
-### 1. ✅ HttpOnly Cookies (Session-Based Authentication)
+Backend (`backend/project_config/settings.py`):
 
-**Backend Configuration** ([settings.py](../backend/project_config/settings.py)):
-```python
-SESSION_COOKIE_HTTPONLY = True  # Prevents JavaScript access to session cookie
-SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
-SESSION_COOKIE_SECURE = not DEBUG  # True in production (HTTPS only)
-SESSION_ENGINE = 'django.contrib.sessions.backends.cache'  # Redis-backed sessions
-```
+- `SESSION_ENGINE = 'django.contrib.sessions.backends.cache'`
+- `SESSION_COOKIE_NAME = 'sessionid'`
+- `SESSION_COOKIE_AGE = 86400` (24h)
+- `SESSION_COOKIE_HTTPONLY = True`
+- `SESSION_COOKIE_SAMESITE = 'Lax'`
+- `SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', False)`
 
-**Benefits:**
-- Session cookies cannot be accessed by JavaScript (XSS protection)
-- Cookies are only sent over HTTPS in production
-- SameSite='Lax' prevents CSRF attacks from external sites
-- Redis-backed sessions for scalability and performance
+Backend auth class (`authentication.authentication.SessionAuthentication`):
 
-**How it works:**
-1. User logs in → Backend creates session → Session ID stored in httpOnly cookie
-2. Frontend makes requests with `credentials: 'include'` → Cookie sent automatically
-3. Backend validates session → User authenticated
+- authenticates from `request.session['user_id']`
+- rejects missing user / inactive user
 
-### 2. ✅ CSRF Token Protection
+## CSRF Protection (Implemented)
 
-**Backend Configuration** ([settings.py](../backend/project_config/settings.py)):
-```python
-CSRF_COOKIE_HTTPONLY = False  # JavaScript needs to read the token
-CSRF_COOKIE_SECURE = not DEBUG  # True in production (HTTPS only)
-CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_USE_SESSIONS = False  # Use cookie-based CSRF tokens
-```
+Backend settings:
 
-**Frontend Implementation:**
+- `CSRF_COOKIE_NAME = 'csrftoken'`
+- `CSRF_COOKIE_HTTPONLY = False` (frontend reads token)
+- `CSRF_COOKIE_SAMESITE = 'Lax'`
+- `CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', False)`
+- `CSRF_USE_SESSIONS = False`
 
-1. **CSRF Utility** ([utils/csrf.js](../frontend/src/utils/csrf.js)):
-   - `getCsrfToken()` - Reads CSRF token from cookie
-   - `fetchCsrfToken()` - Fetches CSRF cookie from backend on app initialization
+Frontend (`frontend/src/utils/api.js` + `frontend/src/utils/csrf.js`):
 
-2. **Centralized API Client** ([utils/api.js](../frontend/src/utils/api.js)):
-   - Axios instance with automatic CSRF token injection
-   - Adds `X-CSRFToken` header to all POST/PUT/PATCH/DELETE requests
-   - Automatic `withCredentials: true` for all requests
-   - Global error handling for 401/403 responses
+- `withCredentials: true` on axios instance
+- `X-CSRFToken` header injected for `POST/PUT/PATCH/DELETE`
+- CSRF cookie initialized by `GET /api/auth/csrf/`
 
-**How it works:**
-1. App initialization → `fetchCsrfToken()` called → CSRF cookie set by backend
-2. User makes POST request → Axios interceptor reads CSRF token from cookie
-3. Request sent with `X-CSRFToken` header → Backend validates token
-4. If token missing/invalid → 403 Forbidden
+## Global Auth Error Handling (Implemented)
 
-### 3. ✅ Secure HTTPS Configuration
+Axios response interceptor:
 
-**Nginx SSL/TLS Configuration** ([nginx.conf](../nginx/nginx.conf)):
-```nginx
-# SSL/TLS security
-ssl_protocols TLSv1.2 TLSv1.3;
-ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:...';
-ssl_prefer_server_ciphers off;
-ssl_session_cache shared:SSL:10m;
-ssl_stapling on;
+- on `401` or non-CSRF `403`, dispatches `auth_error`
+- `AuthContext` listens for `auth_error` and resets user/socket state
 
-# Security headers
-Strict-Transport-Security: max-age=31536000
-X-Frame-Options: SAMEORIGIN
-X-Content-Type-Options: nosniff
-X-XSS-Protection: 1; mode=block
-```
+## WebSocket Security (Current State)
 
-**HTTP to HTTPS Redirect:**
-```nginx
-server {
-    listen 80;
-    return 301 https://$host:8080$request_uri;
-}
-```
+### Implemented
 
-### 4. ✅ Automatic Credential Handling
+- `ws/games/` uses session-backed `scope.user` via `SessionUserAuthMiddlewareStack`
+- users can only join games where they are player_1/player_2
 
-All API requests now use the centralized `api` utility from [utils/api.js](../frontend/src/utils/api.js):
+### Not Fully Implemented
 
-**Updated Files:**
-- [AuthContext.js](../frontend/src/contexts/AuthContext.js) - CSRF initialization
-- [WelcomePage.js](../frontend/src/pages/WelcomePage.js) - Login with CSRF
-- [RegisterPage.js](../frontend/src/pages/RegisterPage.js) - Registration with CSRF
-- [ProfilePage.js](../frontend/src/pages/ProfilePage.js) - Profile updates with CSRF
-- [Components.js](../frontend/src/pages/Components.js) - Logout with CSRF
+- `ws/notifications/` auth path is placeholder (`_get_user_from_token_notification` returns `None`), so connection closes with `4401`
+- no JWT-based WS auth (commented as future work)
 
-**Example Usage:**
-```javascript
-import api from '../utils/api';
+## Transport / Proxy Security
 
-// All requests automatically include:
-// - withCredentials: true (sends cookies)
-// - X-CSRFToken header (for POST/PUT/PATCH/DELETE)
-// - Proper error handling
+### Development config (`nginx/nginx.conf`)
 
-// Login
-await api.post('/auth/login/', { identifier, password });
+- TLS enabled with local cert
+- strong TLS protocols/ciphers configured
+- security headers present (HSTS, X-Frame-Options, etc.)
+- proxies `/api/`, `/media/`, `/ws/games/`, `/ws/notifications/`
 
-// Update profile
-await api.post('/auth/profile/update/', { display_name });
+### Production config (`nginx/nginx.prod.conf`)
 
-// Fetch data
-const response = await api.get('/auth/me/');
-```
+- currently listens on `80` and proxies traffic
+- does **not** include TLS termination itself
+- HTTPS must be provided externally (LB/ingress/reverse proxy) if required
 
-## Security Best Practices Followed
+## Implemented Security Controls Summary
 
-### ✅ Defense in Depth
-1. **Network Layer**: HTTPS with strong TLS configuration
-2. **Application Layer**: CSRF tokens, httpOnly cookies, SameSite
-3. **Session Layer**: Redis-backed sessions with expiration
-4. **Client Layer**: Centralized API client with automatic security headers
+1. Session cookies are HttpOnly and same-site constrained
+2. CSRF protection for state-changing HTTP requests
+3. Server-side session auth (no client-stored access token)
+4. Session-based WS user resolution for game channel
+5. Basic account status checks (`is_active`) during auth
 
-### ✅ Secure Cookie Configuration
-- `httpOnly=True` → Prevents XSS cookie theft
-- `secure=True` (production) → HTTPS only
-- `sameSite=Lax` → CSRF protection
-- Session expiration: 24 hours
+## Known Gaps / Not Implemented Yet
 
-### ✅ CSRF Protection Strategy
-- Double-submit cookie pattern
-- Token required for all state-changing operations
-- Automatic token management via axios interceptors
-- CSRF_TRUSTED_ORIGINS whitelist
-
-### ✅ Production vs Development
-```python
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-SESSION_COOKIE_SECURE = not DEBUG  # Auto-enabled in production
-CSRF_COOKIE_SECURE = not DEBUG     # Auto-enabled in production
-```
-
-## Security Checklist
-
-- ✅ httpOnly cookies for session management
-- ✅ CSRF token protection on all state-changing requests
-- ✅ Secure cookies enabled in production (HTTPS only)
-- ✅ SameSite cookie policy (Lax)
-- ✅ HTTPS with TLS 1.2+ and strong ciphers
-- ✅ HTTP to HTTPS redirect
-- ✅ Security headers (HSTS, X-Frame-Options, etc.)
-- ✅ Automatic credential handling (withCredentials)
-- ✅ Centralized API client with interceptors
-- ✅ Session expiration (24 hours)
-- ✅ Redis-backed session storage
-
-## Testing Security
-
-### Test CSRF Protection:
-```bash
-# Should fail without CSRF token
-curl -X POST https://localhost:8080/api/auth/logout/ \
-  -H "Content-Type: application/json" \
-  --cookie "sessionid=..." \
-  --insecure
-
-# Should succeed with CSRF token
-curl -X POST https://localhost:8080/api/auth/logout/ \
-  -H "Content-Type: application/json" \
-  -H "X-CSRFToken: ..." \
-  --cookie "sessionid=...; csrftoken=..." \
-  --insecure
-```
-
-### Test httpOnly Cookies:
-```javascript
-// In browser console - should return undefined
-document.cookie.split(';').find(c => c.includes('sessionid'))
-// Session cookie is httpOnly, so JavaScript cannot access it ✅
-```
-
-### Test HTTPS Redirect:
-```bash
-# Should redirect to HTTPS
-curl -I http://localhost:8080/
-# HTTP/1.1 301 Moved Permanently
-# Location: https://localhost:8080/
-```
-
-## Troubleshooting
-
-### CSRF Token Issues:
-1. **Error: "CSRF token missing"**
-   - Ensure `fetchCsrfToken()` is called on app initialization
-   - Check that CSRF cookie is set in browser DevTools
-   - Verify `withCredentials: true` is set
-
-2. **Error: "CSRF token invalid"**
-   - Clear cookies and refresh page
-   - Check CSRF_TRUSTED_ORIGINS includes your frontend URL
-   - Verify cookie domain settings
-
-### Cookie Issues:
-1. **Cookies not being sent:**
-   - Verify `withCredentials: true` on all requests
-   - Check CORS_ALLOW_CREDENTIALS = True
-   - Ensure frontend and backend domains match CORS settings
-
-2. **Session expires immediately:**
-   - Check Redis is running
-   - Verify SESSION_ENGINE points to Redis
-   - Check SESSION_COOKIE_AGE setting
-
-## Additional Security Recommendations
-
-### Future Enhancements:
-1. **Rate Limiting**: Add rate limiting to login/register endpoints
-2. **Password Policy**: Implement stronger password requirements
-3. **2FA**: Add two-factor authentication support
-4. **Account Lockout**: Lock accounts after X failed login attempts
-5. **Security Logging**: Log authentication events for audit trail
-6. **Content Security Policy**: Add CSP headers
-7. **Subresource Integrity**: Add SRI for external scripts
-
-### Monitoring:
-- Monitor failed authentication attempts
-- Track CSRF validation failures
-- Alert on suspicious session patterns
-- Regular security audits
-
-## References
-
-- [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
-- [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
-- [Django Security Guide](https://docs.djangoproject.com/en/stable/topics/security/)
-- [Mozilla Web Security Guidelines](https://infosec.mozilla.org/guidelines/web_security)
+1. Built-in rate limiting on auth/social/game endpoints
+2. Account lockout after repeated failed logins
+3. CSP header policy in Django/Nginx layer
+4. Fully functional notification websocket auth channel
+5. Explicit security audit/event logging pipeline

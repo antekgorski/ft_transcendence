@@ -507,11 +507,13 @@ function FriendsManager() {
           <h3 className="text-lg font-semibold text-emerald-400 mb-3">Search by Username</h3>
           <form onSubmit={handleSearch} className="space-y-3">
             <input
+              id="friend-search"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Type a username or display name"
               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-gray-400"
+
             />
             <button
               type="submit"

@@ -25,8 +25,7 @@ export const AuthProvider = ({ children }) => {
         gameSocket.preConnect();
       }
     } catch (err) {
-      // Network error or server error
-      console.error('Auth check failed:', err);
+      // Network error or server error; treat as unauthenticated
       setUser(null);
     } finally {
       setLoading(false);

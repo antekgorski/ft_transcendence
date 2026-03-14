@@ -75,16 +75,16 @@ function Body() {
   const [placedShips, setPlacedShips] = useState([]);
 
   // Stan dla drag and drop
-  const [draggedShip, setDraggedShip] = useState(null);
+  const [, setDraggedShip] = useState(null);
   const [hoverCell, setHoverCell] = useState(null);
   const [dragRestore, setDragRestore] = useState(null);
-  const [didDrop, setDidDrop] = useState(false);
+  const [, setDidDrop] = useState(false);
   const dragBaseRef = useRef(null);
   const didDropRef = useRef(false);
   const draggedShipRef = useRef(null);
   const touchGestureRef = useRef(null);
   const suppressNextClickRef = useRef(false);
-  const [isTouchGestureActive, setIsTouchGestureActive] = useState(false);
+  const [, setIsTouchGestureActive] = useState(false);
 
   // Stan dla forfeit
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
@@ -174,12 +174,13 @@ function Body() {
           let changed = true;
           while (changed) {
             changed = false;
-            shipPositions.forEach((otherPos, otherIndex) => {
+            for (let otherIndex = 0; otherIndex < shipPositions.length; otherIndex += 1) {
+              const otherPos = shipPositions[otherIndex];
               if (!visited.has(otherIndex) && otherPos && typeof otherPos.x === 'number' && typeof otherPos.y === 'number') {
-                const isAdjacent = shipGroup.some(sp =>
+                const isAdjacent = shipGroup.some((sp) => (
                   (sp.x === otherPos.x && Math.abs(sp.y - otherPos.y) === 1) ||
                   (sp.y === otherPos.y && Math.abs(sp.x - otherPos.x) === 1)
-                );
+                ));
 
                 if (isAdjacent) {
                   shipGroup.push(otherPos);
@@ -187,7 +188,7 @@ function Body() {
                   changed = true;
                 }
               }
-            });
+            }
           }
 
           if (shipGroup.length > 0) {
@@ -694,7 +695,7 @@ function Body() {
     if (user) {
       initializeGame();
     }
-  }, [user]);
+  }, [allShips.length, gameInitialized, location.state?.startAI, navigate, user]);
 
   useEffect(() => {
     let timerId;
@@ -976,7 +977,7 @@ function Body() {
       if (disconnectTimerRef.current) { clearInterval(disconnectTimerRef.current); disconnectTimerRef.current = null; }
       if (chatToastTimerRef.current) { clearTimeout(chatToastTimerRef.current); chatToastTimerRef.current = null; }
     };
-  }, [isPlacingShips, gameId, user.id, opponentName]);
+  }, [gameId, isPlacingShips, navigate, opponentName, user.id]);
 
   // Early WS connection during PvP ship placement so player 2 (and player 1 before they finish)
   // can receive placement_timer_start and game_cancelled events before ships are placed.
@@ -1024,7 +1025,7 @@ function Body() {
       gameSocket.off('placement_timer_start', placementTimerStartHandler);
       gameSocket.off('game_cancelled', gameCancelledHandler);
     };
-  }, [gameId, gameMode, isPlacingShips]);
+  }, [gameId, gameMode, isPlacingShips, navigate]);
 
   // Scroll chat box to bottom when new messages arrive (no page scroll)
   useEffect(() => {
@@ -2519,6 +2520,7 @@ function Body() {
               className="flex flex-col gap-2 sm:flex-row"
             >
               <input
+                id="type_message"
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}

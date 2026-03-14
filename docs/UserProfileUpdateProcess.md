@@ -1,354 +1,136 @@
 # User Profile Update Process
 
-## Profile Update Flow Diagram
+This document describes the **currently implemented** profile-management behavior.
+
+## Profile + Stats + Avatar Flow Diagram (Implemented)
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant Frontend as Frontend<br/>(React)
-    participant Backend as Backend<br/>(Django)
-    participant DB as Database<br/>(PostgreSQL)
-    participant Storage as File Storage<br/>(Local/S3)
+    participant Frontend as Frontend (React)
+    participant Backend as Backend (Django)
+    participant DB as Database
+    participant Storage as Media Storage
 
-    Note over User,Storage: Profile Information Update
-    
-    User->>Frontend: Navigate to profile settings
-    Frontend->>Backend: GET /api/user/profile<br/>(Session cookie)
-    Backend->>Backend: Verify session from cookie
-    
-    alt Token invalid/expired
-        Backend-->>Frontend: 401 Unauthorized
-        Frontend-->>User: Redirect to login
-    else Token valid
-        Backend->>DB: SELECT User<br/>WHERE id = token.user_id
-        DB-->>Backend: User data
-        
-        Backend->>DB: SELECT PlayerStats<br/>WHERE user_id = token.user_id
-        DB-->>Backend: Statistics
-        
-        Backend-->>Frontend: 200 OK<br/>{user_data, stats}
-        Frontend->>Frontend: Populate form fields
-        Frontend-->>User: Display profile page
-    end
-    
-    User->>Frontend: Edit profile fields<br/>(display_name, language, email)
-    Frontend->>Frontend: Validate changes<br/>- Check required fields<br/>- Validate email format<br/>- Check field lengths
-    
-    User->>Frontend: Click "Save Changes"
-    Frontend->>Backend: PATCH /api/user/profile<br/>{display_name, language, email}<br/>(Session cookie)
-    
-    Backend->>Backend: Verify session from cookie<br/>Get user_id
-    Backend->>Backend: Sanitize inputs<br/>Validate data
-    
-    Backend->>DB: Check if new email exists<br/>(if email changed)
-    DB-->>Backend: Query result
-    
-    alt Email taken by another user
-        Backend-->>Frontend: 409 Conflict
-        Frontend-->>User: Show error: Email already in use
-    else Email available or unchanged
-        Backend->>DB: UPDATE User SET<br/>display_name = new_value,<br/>email = new_value,<br/>language = new_value<br/>WHERE id = user_id
-        DB-->>Backend: Updated successfully
-        
-        Backend->>DB: SELECT updated User data
-        DB-->>Backend: User record
-        
-        Backend-->>Frontend: 200 OK<br/>{updated_user_data}
-        Frontend->>Frontend: Update app state
-        Frontend-->>User: Show success message
-    end
+    User->>Frontend: Open profile page
+    Frontend->>Backend: GET /api/auth/me/
+    Backend-->>Frontend: 200 user data (or {user: null})
 
-    Note over User,Storage: Password Change
-    
-    User->>Frontend: Navigate to "Change Password"
-    Frontend-->>User: Show password change form
-    
-    User->>Frontend: Enter old & new password
-    Frontend->>Frontend: Validate passwords<br/>- Old password not empty<br/>- New password strength<br/>- Passwords don't match
-    
-    User->>Frontend: Click "Change Password"
-    Frontend->>Backend: POST /api/user/password<br/>{old_password, new_password}<br/>(Session cookie)
-    
-    Backend->>Backend: Verify session from cookie
-    Backend->>Backend: Sanitize inputs
-    
-    Backend->>DB: SELECT password_hash<br/>WHERE id = user_id
-    DB-->>Backend: Current password hash
-    
-    Backend->>Backend: Verify old_password<br/>against stored hash
-    
-    alt Old password incorrect
-        Backend-->>Frontend: 401 Unauthorized
-        Frontend-->>User: Show error: Current password incorrect
-    else Old password correct
-        alt OAuth user (password_hash is NULL)
-            Backend-->>Frontend: 400 Bad Request
-            Frontend-->>User: Show: OAuth accounts cannot set password
-        else Regular user
-            Backend->>Backend: Hash new password<br/>(PBKDF2/bcrypt)
-            
-            Backend->>DB: UPDATE User SET<br/>password_hash = new_hash<br/>WHERE id = user_id
-            DB-->>Backend: Updated
-            
-            Backend-->>Frontend: 200 OK
-            Frontend-->>User: Show success: Password changed
-        end
-    end
+    Frontend->>Backend: GET /api/games/stats/me/
+    Backend->>DB: Read PlayerStats for request.user
+    Backend-->>Frontend: 200 stats
 
-    Note over User,Storage: Avatar Upload
-    
-    User->>Frontend: Click "Upload Avatar"
-    Frontend->>Frontend: Open file picker
-    User->>Frontend: Select image file
-    
-    Frontend->>Frontend: Validate file<br/>- Check file type (jpg, png, gif)<br/>- Check file size (max 5MB)<br/>- Optional: Preview crop
-    
-    alt File invalid
-        Frontend-->>User: Show error: Invalid file
-    else File valid
-        Frontend->>Frontend: Create FormData<br/>with file
-        
-        Frontend->>Backend: POST /api/user/avatar<br/>(multipart/form-data)<br/>(Session cookie)
-        
-        Backend->>Backend: Verify session from cookie
-        Backend->>Backend: Validate file<br/>- Check MIME type<br/>- Verify file size<br/>- Scan for malware (optional)
-        
-        alt File validation fails
-            Backend-->>Frontend: 400 Bad Request
-            Frontend-->>User: Show error message
-        else File valid
-            Backend->>Backend: Generate unique filename<br/>(user_id + timestamp + ext)
-            
-            Backend->>Storage: Save file<br/>(/media/avatars/ or S3)
-            Storage-->>Backend: File URL
-            
-            Backend->>DB: SELECT avatar_url<br/>WHERE id = user_id
-            DB-->>Backend: Old avatar URL
-            
-            Backend->>DB: UPDATE User SET<br/>avatar_url = new_url<br/>WHERE id = user_id
-            DB-->>Backend: Updated
-            
-            alt Old avatar exists (not OAuth avatar)
-                Backend->>Storage: Delete old avatar file
-                Storage-->>Backend: Deleted
-            end
-            
-            Backend-->>Frontend: 200 OK<br/>{avatar_url}
-            Frontend->>Frontend: Update displayed avatar
-            Frontend-->>User: Show success message
-        end
-    end
+    Note over User,Backend: Display Name Update
+    User->>Frontend: Edit display name
+    Frontend->>Backend: POST /api/auth/profile/update/ {display_name}
+    Backend->>Backend: Validate non-empty display_name
+    Backend->>DB: UPDATE users.display_name
+    Backend-->>Frontend: 200 {message, user}
+    Frontend->>Backend: GET /api/auth/me/ (checkAuth refresh)
 
-    Note over User,Storage: Delete Account
-    
-    User->>Frontend: Click "Delete Account"
-    Frontend-->>User: Show confirmation dialog<br/>"This action cannot be undone"
-    
-    User->>Frontend: Confirm deletion<br/>Enter password for verification
-    Frontend->>Backend: DELETE /api/user/account<br/>{password}<br/>(Session cookie)
-    
-    Backend->>Backend: Verify session from cookie
-    Backend->>Backend: Verify password
-    
-    alt Password incorrect
-        Backend-->>Frontend: 401 Unauthorized
-        Frontend-->>User: Show error: Password incorrect
-    else Password correct
-        Backend->>DB: UPDATE User SET<br/>is_active = FALSE,<br/>email = email + '_deleted_' + timestamp<br/>WHERE id = user_id
-        DB-->>Backend: Soft deleted
-        
-        Note over Backend: Soft delete preserves<br/>game history integrity
-        
-        Backend->>Backend: Clear session cookie<br/>(Set-Cookie with Max-Age=0)
-        Backend-->>Frontend: 200 OK
-        Frontend->>Frontend: Clear app state
-        Frontend-->>User: Redirect to homepage<br/>Show: Account deleted
-    end
+    Note over User,Backend: Avatar Selection
+    User->>Frontend: Select default/custom/intra avatar
+    Frontend->>Backend: POST /api/auth/avatar/set/ {avatar}
+    Backend->>DB: Update users.avatar_url reference
+    Backend-->>Frontend: 200 {message, avatar_url}
+
+    Note over User,Backend: Custom Avatar Upload
+    User->>Frontend: Upload image file
+    Frontend->>Frontend: Validate image/* + <=2MB
+    Frontend->>Backend: POST /api/auth/avatar/upload/ (multipart)
+    Backend->>Backend: Validate image/* + <=2MB
+    Backend->>Storage: Save optimized image file
+    Backend->>DB: Set custom_avatar_url + avatar_url
+    Backend-->>Frontend: 200 {message, avatar_url}
 ```
 
-## Process Breakdown
+## Implemented Endpoints
 
-### Frontend Responsibilities
+- `GET /api/auth/me/`
+  - Authenticated response: flat user object (`id`, `username`, `email`, `display_name`, avatar fields, `is_online`)
+  - Unauthenticated response: `{ "user": null }`
+- `POST /api/auth/profile/update/`
+  - Body: `{ display_name }`
+  - Success: `200` with updated `user`
+  - Errors: `400`, `500`
+- `POST /api/auth/avatar/set/`
+  - Body: `{ avatar }`
+  - `avatar` allowed values:
+    - integer `1..4` (default avatars)
+    - `'custom'` (requires existing custom upload)
+    - `'intra'` (only for 42 OAuth users with stored intra avatar)
+  - Success: `200` with selected `avatar_url`
+  - Errors: `400`, `404`
+- `POST /api/auth/avatar/upload/`
+  - Multipart field: `avatar`
+  - Validations: image MIME type, max `2MB`
+  - Success: `200` with new `avatar_url`
+  - Errors: `400`, `500`
+- `GET /api/games/stats/me/`
+  - Returns profile statistics used by profile page
 
-1. **Profile Display**
-   - Fetch and display current user data
-   - Show read-only fields (username, created_at)
-   - Show editable fields (display_name, email, language)
-   - Display player statistics (read-only)
+## Frontend Responsibilities (Implemented)
 
-2. **Form Validation**
-   - Validate email format
-   - Check display name length (3-50 characters)
-   - Enforce password strength requirements
-   - Validate file types and sizes for avatar upload
-   - Show real-time validation feedback
+1. Load authenticated user via `checkAuth()` (`/auth/me/`)
+2. Fetch stats via `/games/stats/me/`
+3. Edit display name only (no email/language/password form in current UI)
+4. Avatar management:
+   - choose preset avatar
+   - choose custom/intra avatar if available
+   - upload custom image (client-side `image/*`, `<=2MB` checks)
 
-3. **File Upload**
-   - Preview image before upload
-   - Optional: Implement crop/resize functionality
-   - Show upload progress
-   - Update displayed avatar immediately
+## Backend Responsibilities (Implemented)
 
-4. **User Experience**
-   - Disable form during submission
-   - Show loading states
-   - Display success/error messages
-   - Confirm destructive actions (password change, account deletion)
+1. Authenticate through custom session authentication (`request.session['user_id']`)
+2. Validate and persist `display_name`
+3. Validate avatar upload type/size and store media file
+4. Maintain three avatar fields:
+   - `avatar_url` (active avatar)
+   - `custom_avatar_url` (uploaded avatar)
+   - `intra_avatar_url` (downloaded 42 avatar)
+5. Return safe avatar URLs only when files exist (`get_safe_avatar_url`)
 
-### Backend Responsibilities
+## Updatable vs Read-Only Fields (Current Implementation)
 
-1. **Authentication & Authorization**
-   - Extract Session from HttpOnly cookie on every request
-   - Verify Session signature and expiration
-   - Ensure user can only modify their own profile
-   - Check token expiration
-   - Verify Session on every request
-   - Ensure user can only modify their own profile
-   - Check token expiration
+### Updatable Through API/UI
 
-2. **Data Validation**
-   - Sanitize all text inputs
-   - Validate email uniqueness
-   - Verify password strength
-   - Validate file types and sizes
-   - Check MIME types (don't trust client)
+- `display_name`
+- Active avatar (`avatar_url`) via set/upload flows
+- `custom_avatar_url` via upload
 
-3. **File Management**
-   - Generate secure, unique filenames
-   - Store files in appropriate location
-   - Clean up old avatar files
-   - Implement file size limits
-   - Optional: Virus scanning
+### Not Currently Updatable in Profile Flow
 
-4. **Security**
-   - Hash passwords securely
-   - Verify old password before changing
-   - Prevent email enumeration
-   - Rate limit update requests
-   - Log security-relevant changes
+- `email`
+- `language`
+- `username`
+- `password` (no change-password endpoint)
+- account deletion / soft delete (no endpoint)
 
-### Database Operations
+## Security Considerations (Current State)
 
-#### Profile Information Update
-```sql
--- Check email availability
-SELECT id FROM User 
-WHERE email = new_email 
-  AND id != current_user_id;
+### Implemented
 
--- Update profile
-UPDATE User SET
-    display_name = new_display_name,
-    email = new_email,
-    language = new_language
-WHERE id = user_id;
-```
+1. Session cookie auth + CSRF middleware
+2. HttpOnly session cookie
+3. Server-side file validation for uploads (`image/*`, max 2MB)
+4. Users update only their own data (auth based on session user)
 
-#### Password Change
-```sql
--- Fetch current password hash
-SELECT password_hash 
-FROM User 
-WHERE id = user_id;
+### Not Implemented Yet
 
--- Update password
-UPDATE User SET
-    password_hash = new_hash
-WHERE id = user_id;
-```
+1. Password change flow (`old_password`/`new_password` endpoint)
+2. Account deletion endpoint
+3. Profile-update rate limiting
+4. Virus scanning for uploaded files
 
-#### Avatar Update
-```sql
--- Get old avatar URL
-SELECT avatar_url 
-FROM User 
-WHERE id = user_id;
+## Error Handling (Implemented)
 
--- Update avatar
-UPDATE User SET
-    avatar_url = new_url
-WHERE id = user_id;
-```
-
-#### Soft Delete Account
-```sql
--- Soft delete (preserves referential integrity)
-UPDATE User SET
-    is_active = FALSE,
-    email = CONCAT(email, '_deleted_', EXTRACT(EPOCH FROM NOW()))
-WHERE id = user_id;
-
--- Alternative: Hard delete (cascades to stats, but breaks game history)
--- DELETE FROM User WHERE id = user_id;
-```
-
-## Updateable vs Read-Only Fields
-
-### Can Update
-- `display_name` - User's display name
-- `email` - Email address (must remain unique)
-- `language` - UI language preference
-- `avatar_url` - Profile picture
-- `password_hash` - Password (requires old password verification)
-
-### Read-Only
-- `username` - Cannot be changed (permanent identifier)
-- `oauth_provider` - Set during registration
-- `oauth_id` - Set during registration
-- `created_at` - Account creation timestamp
-- `last_login` - Automatically updated
-- All fields in `PlayerStats` - Updated by game logic only
-
-## Security Considerations
-
-1. **Session Cookie Authentication**: 
-   - Session stored in HttpOnly, Secure, SameSite=Strict cookie
-   - Not accessible via JavaScript (protects against XSS attacks)
-   - Automatically included in requests with `credentials: 'include'`
-2. **Authorization**: Users can only update their own profile (verified via session user_id)
-3. **Password Verification**: Always require old password to change password
-4. **Email Uniqueness**: Prevent duplicate emails across users
-5. **CSRF Protection**: Implement CSRF tokens for state-changing operations
-6. **File Upload Security**:
-   - Validate file types server-side
-   - Limit file sizes (5MB recommended)
-   - Sanitize filenames
-   - Store outside web root or use signed URLs
-   - Optional: Virus scanning
-7. **Rate Limiting**: Limit update frequency (e.g., max 10 per hour)
-8. **Audit Trail**: Log sensitive changes (email, password)
-9. **Soft Deletion**: Preserve data integrity for game history
-
-## Error Handling
-
-| Error Condition | HTTP Status | Frontend Action |
-|----------------|-------------|-----------------|
-| Token invalid/expired | 401 Unauthorized | Redirect to login |
-| Email already taken | 409 Conflict | Show error on email field |
-| Invalid file type | 400 Bad Request | Show "Only JPG, PNG, GIF allowed" |
-| File too large | 413 Payload Too Large | Show "Max file size is 5MB" |
-| Wrong old password | 401 Unauthorized | Show "Current password incorrect" |
-| Weak new password | 400 Bad Request | Show password requirements |
-| OAuth user setting password | 400 Bad Request | Show "OAuth accounts cannot set password" |
-| Server error | 500 Internal Server Error | Show "Update failed, try again" |
-
-## File Upload Best Practices
-
-1. **Storage Options**:
-   - **Development**: Local filesystem (`/media/avatars/`)
-   - **Production**: Cloud storage (AWS S3, Google Cloud Storage)
-
-2. **Filename Generation**:
-   ```python
-   filename = f"{user_id}_{timestamp()}.{extension}"
-   # Example: a7b3c9d1-1704484800.jpg
-   ```
-
-3. **URL Structure**:
-   - Local: `https://yourdomain.com/media/avatars/{filename}`
-   - S3: `https://bucket.s3.amazonaws.com/avatars/{filename}`
-
-4. **Image Processing** (Optional):
-   - Resize to standard dimensions (e.g., 200x200)
-   - Convert to optimized format (WebP)
-   - Generate thumbnails
+| Error Condition | HTTP Status | Notes |
+|----------------|-------------|-------|
+| Unauthenticated access to protected profile endpoints | 401 | DRF `IsAuthenticated` |
+| Missing/empty `display_name` | 400 | Profile update validation |
+| Invalid avatar option | 400 | Must be `1..4`, `custom`, or `intra` (with constraints) |
+| Missing upload file | 400 | `No file provided.` |
+| Upload too large (>2MB) | 400 | `File too large. Max size is 2MB.` |
+| Upload invalid MIME type | 400 | Must start with `image/` |
+| User not found in avatar set flow | 404 | Defensive path |
+| Unexpected server failure | 500 | Generic failure response |
