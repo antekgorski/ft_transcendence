@@ -356,62 +356,127 @@ erDiagram
 - **Battleship Game**: Full-featured battleships game with options to play against AI or another player (dmodrzej, mbany)
 - **Real-time Chat**: WebSocket-based option to chat during the game with AI or another player (dmodrzej)
 - **AI Opponent**: Strategic bot using probability-grid algorithms for challenging single-player experience (dmodrzej)
-- **Game History**: Persistent match records with detailed statistics (shots, hits, duration, winner) (grubczyns, dmodrzej, mbany)
+- **Game History**: Persistent match records with detailed statistics (shots, hits, duration, winner) (gbuczyns, dmodrzej, mbany)
 
 ### Statistics & Leaderboards
-- **Player Statistics**: Track games played, wins and losses, accuracy percentage, and win streaks (grubczyns, dmodrzej, mbany)
+- **Player Statistics**: Track games played, wins and losses, accuracy percentage, and win streaks (gbuczyns, dmodrzej, mbany)
 - **Leaderboard System**: Global rankings based on wins, accuracy, and other performance metrics (dmodrzej)
 
 ---
 
 # Modules
 
-## Basic
+Scoring rule used in this section: **Major = 2 points**, **Minor = 1 point**.
 
-### Web (7 Points)
+## Mandatory Modules (14 points)
 
-- **Major: Use a framework for both the frontend and backend.** Django & React (2 pts) (ltomasze, grubczyns, mbany, dmodrzej, agorski)
-- **Major: Implement real-time features using WebSockets or similar technology.** Real-time gaming experience and chat (2 pts) (dmodrzej)
-- **Major: Allow users to interact with other users.** Basic chat, checking other users' profiles, adding and removing friends (2 pts) (ltomasze, grubczyns)
-- **Minor: Use an ORM for the database.** Django ORM for database management (1 pt) (dmodrzej)
+### Web (7 points)
 
-### User Management (3 Points)
+1) **Major (2 pts) – Framework for frontend and backend**
+- **Why we chose it:** We needed a robust full web stack with clear separation of concerns and strong community support.
+- **How it was implemented:** React was used for SPA UI and routing; Django + DRF were used for APIs and backend business logic.
+- **Team members:** ltomasze, gbuczyns, mbany, dmodrzej, agorski.
 
-- **Major: Standard user management and authentication.** Secure registration, login, and profile management (2 pts) (ltomasze, agorski)
-- **Minor: Game statistics and match history.** Game stats and match history (1 pt) (dmodrzej, grubczyns)
+2) **Major (2 pts) – Real-time features via WebSockets**
+- **Why we chose it:** Real-time Battleship gameplay and in-game events require low-latency bidirectional communication.
+- **How it was implemented:** Django Channels + Daphne + Redis channel layers power real-time game state sync, invites, and notifications.
+- **Team members:** dmodrzej.
 
-### Gaming and User Experience (4 Points)
+3) **Major (2 pts) – User interaction features**
+- **Why we chose it:** Social interaction is a core value of the product and required by the selected module set.
+- **How it was implemented:** Friendship flows (add/accept/remove), profile lookup, and in-game chat were exposed via API and WebSocket events.
+- **Team members:** ltomasze, gbuczyns.
 
-- **Major: Implement a complete web-based game where users can play against each other** Full Battleship implementation (2 pts) (dmodrzej)
-- **Major: Remote players — Enable two players on separate computers to play the same game in real-time** Real-time multiplayer via WebSockets (2 pts) (dmodrzej)
+4) **Minor (1 pt) – ORM usage**
+- **Why we chose it:** ORM accelerates development while preserving schema integrity and maintainability.
+- **How it was implemented:** Django ORM models/migrations define users, games, stats, friendships, and notifications.
+- **Team members:** dmodrzej.
 
-**Total: 14 Points**
+### User Management (3 points)
 
-## Bonus
+5) **Major (2 pts) – Standard authentication and profile management**
+- **Why we chose it:** Secure account lifecycle is mandatory for multi-user gameplay.
+- **How it was implemented:** Registration/login/logout, hashed passwords, session auth, profile edit, and avatar management.
+- **Team members:** ltomasze, agorski.
 
-### User Management (1 Point)
+6) **Minor (1 pt) – Game statistics and match history**
+- **Why we chose it:** Players need measurable progress and transparent match results.
+- **How it was implemented:** Persistent per-user stats and recent matches endpoints integrated into profile/leaderboard views.
+- **Team members:** dmodrzej, gbuczyns.
 
-- **Minor: Implement remote authentication with OAuth 2.0** OAuth integration with 42 Intra (1 pt) (dmodrzej, agorski)
+### Gaming and User Experience (4 points)
 
-### Artificial Intelligence (2 Points)
+7) **Major (2 pts) – Complete web-based game**
+- **Why we chose it:** Battleship is the central product feature and foundation for gameplay-related modules.
+- **How it was implemented:** Full game loop (setup, turns, hit/miss/sink logic, win/loss conditions, persistence).
+- **Team members:** dmodrzej.
 
-- **Major: Introduce an AI Opponent for games** A strategic bot utilizing a probability-grid algorithm for ship hunting (2 pts) (dmodrzej)
+8) **Major (2 pts) – Remote players in real-time**
+- **Why we chose it:** Multi-device multiplayer is required and essential to project scope.
+- **How it was implemented:** Real-time synchronization across clients, disconnect handling, and reconnect grace logic.
+- **Team members:** dmodrzej.
 
-### Modules of Choice (2 Points)
+**Mandatory total: 14 points (Web 7 + User Management 3 + Gaming 4).**
 
-- **Minor: Accessibility of the game via friendly URL** Game available on https://statki.bieda.it (1 pt) (dmodrzej)
-- **Minor: Deployment pipeline to a remote VPS server** Deployment to a server on mikr.us via Docker Hub with a deployment script (1 pt) (dmodrzej)
+## Bonus Modules (5 points)
 
-**Total: 19 Points** (14 points for basic implementation + 5 points for bonus)
+9) **Minor (1 pt) – OAuth 2.0 authentication (User Management)**
+- **Why we chose it:** Reduces login friction and demonstrates external identity provider integration.
+- **How it was implemented:** 42 Intra OAuth flow with callback, account binding, and session initialization.
+- **Team members:** dmodrzej, agorski.
+
+10) **Major (2 pts) – AI Opponent (Artificial Intelligence)**
+- **Why we chose it:** Enables meaningful single-player mode and increases gameplay depth.
+- **How it was implemented:** Probability-grid targeting with state-aware shot selection and adaptive hunt/target phases.
+- **Team members:** dmodrzej.
+
+11) **Minor (1 pt) – Friendly URL deployment (Modules of choice)**
+- **Why we chose it:** Makes the project publicly accessible for demos/evaluation and improves usability.
+- **How it was implemented:** Domain routing to the production stack and Nginx reverse-proxy exposure.
+- **Team members:** dmodrzej.
+
+12) **Minor (1 pt) – VPS deployment pipeline (Modules of choice)**
+- **Why we chose it:** Provides repeatable remote deployment and demonstrates practical DevOps ownership.
+- **How it was implemented:** Docker Hub images + deployment script + production compose stack on mikr.us VPS.
+- **Team members:** dmodrzej.
+
+**Overall total: 19 points (14 mandatory + 5 bonus).**
+
+### Justification for Modules of Choice
+
+- **Business/project value:** Public URL and deployment pipeline make the application review-ready, easier to test by peers, and closer to real-world delivery standards.
+- **Technical value:** These modules validated container image lifecycle, environment separation, service orchestration, and operational reliability beyond local development.
 
 ---
 
 # Individual Contributions
 
-| Member     | Focus Area                                      |
-|------------|------------------------------------------------|
-| **agorski**  | GitHub Issues, project setup, backend development |
-| **dmodrzej** | Docker, infrastructure, backend support         |
-| **ltomasze** | Backend development (Django)                    |
-| **mbany**    | Frontend development (React)                    |
-| **gbuczyns** | Frontend development (React)                    |
+## agorski
+- **Primary contributions:** Project setup, GitHub Issues workflow, backend support, OAuth integration support.
+- **Specific features/modules:** Standard authentication module (shared), OAuth 2.0 flow (shared), project planning artifacts.
+- **Challenges and resolution:** Integration alignment between frontend login states and backend session flow; resolved through iterative API contract updates and coordinated review.
+
+## dmodrzej
+- **Primary contributions:** Infrastructure architecture, WebSocket gameplay core, AI opponent, production deployment.
+- **Specific features/modules:** Real-time module, Battleship game core, remote-player synchronization, AI Opponent, Docker/Compose and VPS pipeline.
+- **Challenges and resolution:** Race conditions and reconnect edge cases in PvP sessions; resolved by tightening server-side state transitions, adding timeout handling, and refining Redis-backed coordination.
+
+## ltomasze
+- **Primary contributions:** Django backend development for auth/game endpoints and integration.
+- **Specific features/modules:** Registration/login/profile flows, user management module (shared), game-related API endpoints.
+- **Challenges and resolution:** Validation consistency between frontend and backend; resolved by enforcing backend-first validation rules and aligning frontend form constraints with API responses.
+
+## mbany
+- **Primary contributions:** React UI implementation and gameplay-oriented frontend integration.
+- **Specific features/modules:** Core interface views, game flow screens, social/notification UI integration, profile and auth screens.
+- **Challenges and resolution:** Keeping UI state in sync with real-time events; resolved by centralizing state updates and standardizing message handling patterns.
+
+## gbuczyns
+- **Primary contributions:** Frontend feature development and API integration.
+- **Specific features/modules:** User profile views, social interaction screens, game history/statistics presentation.
+- **Challenges and resolution:** Coordinating evolving backend payload shapes with stable UI rendering; resolved via serializer-driven adjustments and incremental frontend compatibility fixes.
+
+## Team-level collaboration notes
+- Code reviews were used for critical gameplay and authentication changes.
+- Work was tracked in issues and discussed during weekly sync meetings.
+- Cross-module blockers (auth ↔ websocket ↔ UI) were handled jointly to keep integration stable.
