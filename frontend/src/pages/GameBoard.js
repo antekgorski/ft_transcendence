@@ -339,8 +339,14 @@ function Body() {
             const activeGame = activeGameResponse.data;
             const mode = activeGame.game_type || 'ai';
 
-            currentGameId = activeGameResponse.data.id;
-            const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
+            // Skip stale pending PvP games when the user explicitly requests an AI
+            // game. The backend auto-clears the pending PvP game when the POST
+            // /games/ request arrives with game_type='ai'.
+            const shouldSkipStalePvP = location.state?.startAI && mode === 'pvp' && activeGame.status === 'pending';
+
+            if (!shouldSkipStalePvP) {
+              currentGameId = activeGameResponse.data.id;
+              const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
 
               // Set game mode & opponent name from active game metadata
               setGameMode(mode);
@@ -470,9 +476,10 @@ function Body() {
                 setStatusMessage('Place your ships on your board.');
               }
 
-            setError(null);
-            setGameLoading(false);
-            return;
+              setError(null);
+              setGameLoading(false);
+              return;
+            }
           }
         } catch (activeErr) {
           if (activeErr.response?.status !== 404) {
