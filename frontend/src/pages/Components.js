@@ -5,10 +5,37 @@ import { GameContext } from '../contexts/GameContext';
 import api from '../utils/api';
 import { gameSocket } from '../utils/socket';
 
+function SiteFooter({ className = '' }) {
+  return (
+    <footer className={`border-t border-slate-700/60 bg-slate-900/70 px-4 py-4 backdrop-blur-sm ${className}`.trim()}>
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-center gap-2 text-center">
+        <p className="text-sm text-gray-400">
+          ft_transcendence - 42 School Project
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
+          <Link
+            to="/terms-of-service"
+            className="text-emerald-400 transition-colors hover:text-emerald-300"
+          >
+            Terms of Service
+          </Link>
+          <span className="text-gray-500">|</span>
+          <Link
+            to="/privacy-policy"
+            className="text-emerald-400 transition-colors hover:text-emerald-300"
+          >
+            Privacy Policy
+          </Link>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 function Template({ children }) {
   // remove use effect if not complient
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900">
+    <div className="flex min-h-screen flex-col bg-gradient-to-br from-slate-900 to-blue-900">
       {/* Pasek na górze */}
       <nav className="bg-slate-800/50 backdrop-blur-sm border-b border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -24,9 +51,11 @@ function Template({ children }) {
       </nav>
 
       {/* Główna zawartość strony */}
-      <div className="p-5">
+      <div className="flex-1 p-5">
         {children}
       </div>
+
+      <SiteFooter />
 
       {/* Global toasts */}
       <InviteToast />
@@ -136,6 +165,7 @@ function LogoHorizontal() {
 
 
 export { Template };
+export { SiteFooter };
 
 /**
  * InviteToast – displayed globally (via Template) when another player

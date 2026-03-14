@@ -24,8 +24,6 @@ class GameSocket {
    * @param {object} options - Connection options (e.g., { silent: true })
    */
   connect(gameId, onConnect, onError, options = {}) {
-    const { silent = false } = options;
-
     // If game ID changed, close old socket and create new one
     if (this.gameId && this.gameId !== gameId && this.socket) {
       this.socket.close();
