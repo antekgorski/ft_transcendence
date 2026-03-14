@@ -339,24 +339,24 @@ erDiagram
 # Features List
 
 ### User Management
-- **User Registration & Login**: Secure account creation with password hashing, email validation, and session-based authentication
-- **OAuth 2.0 Authentication**: Single sign-on via 42 Intra for streamlined access
-- **User Profiles**: Customizable display names and avatar uploads
-- **Session Management**: Secure Redis-backed sessions with HttpOnly cookies
+- **User Registration & Login**: Secure account creation with password hashing, email validation, and session-based authentication (ltomasze, mbany)
+- **OAuth 2.0 Authentication**: Single sign-on via 42 Intra for streamlined access (agorski)
+- **User Profiles**: Customizable display names and avatar uploads (gbuczyns, agorski, ltomasze)
+- **Session Management**: Secure Redis-backed sessions with HttpOnly cookies (dmodrzej)
 
 ### Social Features
-- **Friendship System**: Send, accept, or reject friend requests with online status checking
-- **Notifications**: In-app alerts for friend requests, game invitations, and match results with customizable preferences
+- **Friendship System**: Send, accept, or reject friend requests with online status checking (mbany)
+- **Notifications**: In-app alerts for friend requests, game invitations, and match results with customizable preferences (mbany)
 
 ### Gameplay
-- **Battleship Game**: Full-featured battleships game with options to play against AI or another player
-- **Real-time Chat**: WebSocket-based option to chat during the game with AI or another player
-- **AI Opponent**: Strategic bot using probability-grid algorithms for challenging single-player experience
-- **Game History**: Persistent match records with detailed statistics (shots, hits, duration, winner)
+- **Battleship Game**: Full-featured battleships game with options to play against AI or another player (dmodrzej, mbany)
+- **Real-time Chat**: WebSocket-based option to chat during the game with AI or another player (dmodrzej)
+- **AI Opponent**: Strategic bot using probability-grid algorithms for challenging single-player experience (dmodrzej)
+- **Game History**: Persistent match records with detailed statistics (shots, hits, duration, winner) (grubczyns, dmodrzej, mbany)
 
 ### Statistics & Leaderboards
-- **Player Statistics**: Track games played, wins and losses, accuracy percentage, and win streaks
-- **Leaderboard System**: Global rankings based on wins, accuracy, and other performance metrics
+- **Player Statistics**: Track games played, wins and losses, accuracy percentage, and win streaks (grubczyns, dmodrzej, mbany)
+- **Leaderboard System**: Global rankings based on wins, accuracy, and other performance metrics (dmodrzej)
 
 ---
 
@@ -366,20 +366,20 @@ erDiagram
 
 ### Web (7 Points)
 
-- **Major: Use a framework for both the frontend and backend.** Django & React (2 pts)
-- **Major: Implement real-time features using WebSockets or similar technology.** Real-time gaming experience and chat (2 pts)
-- **Major: Allow users to interact with other users.** Basic chat, checking other users' profiles, adding and removing friends (2 pts)
-- **Minor: Use an ORM for the database.** Django ORM for database management (1 pt)
+- **Major: Use a framework for both the frontend and backend.** Django & React (2 pts) (ltomasze, grubczyns, mbany, dmodrzej, agorski)
+- **Major: Implement real-time features using WebSockets or similar technology.** Real-time gaming experience and chat (2 pts) (dmodrzej)
+- **Major: Allow users to interact with other users.** Basic chat, checking other users' profiles, adding and removing friends (2 pts) (ltomasze, grubczyns)
+- **Minor: Use an ORM for the database.** Django ORM for database management (1 pt) (dmodrzej)
 
 ### User Management (3 Points)
 
-- **Major: Standard user management and authentication.** Secure registration, login, and profile management (2 pts)
-- **Minor: Game statistics and match history.** Game stats and match history (1 pt)
+- **Major: Standard user management and authentication.** Secure registration, login, and profile management (2 pts) (ltomasze, agorski)
+- **Minor: Game statistics and match history.** Game stats and match history (1 pt) (dmodrzej, grubczyns)
 
 ### Gaming and User Experience (4 Points)
 
-- **Major: Implement a complete web-based game where users can play against each other** Full Battleship implementation (2 pts)
-- **Major: Remote players — Enable two players on separate computers to play the same game in real-time** Real-time multiplayer via WebSockets (2 pts)
+- **Major: Implement a complete web-based game where users can play against each other** Full Battleship implementation (2 pts) (dmodrzej)
+- **Major: Remote players — Enable two players on separate computers to play the same game in real-time** Real-time multiplayer via WebSockets (2 pts) (dmodrzej)
 
 **Total: 14 Points**
 
@@ -387,16 +387,16 @@ erDiagram
 
 ### User Management (1 Point)
 
-- **Minor: Implement remote authentication with OAuth 2.0** OAuth integration with 42 Intra (1 pt)
+- **Minor: Implement remote authentication with OAuth 2.0** OAuth integration with 42 Intra (1 pt) (dmodrzej, agorski)
 
 ### Artificial Intelligence (2 Points)
 
-- **Major: Introduce an AI Opponent for games** A strategic bot utilizing a probability-grid algorithm for ship hunting (2 pts)
+- **Major: Introduce an AI Opponent for games** A strategic bot utilizing a probability-grid algorithm for ship hunting (2 pts) (dmodrzej)
 
 ### Modules of Choice (2 Points)
 
-- **Minor: Accessibility of the game via friendly URL** Game available on https://statki.bieda.it (1 pt)
-- **Minor: Deployment pipeline to a remote VPS server** Deployment to a server on mikr.us via Docker Hub with a deployment script (1 pt)
+- **Minor: Accessibility of the game via friendly URL** Game available on https://statki.bieda.it (1 pt) (dmodrzej)
+- **Minor: Deployment pipeline to a remote VPS server** Deployment to a server on mikr.us via Docker Hub with a deployment script (1 pt) (dmodrzej)
 
 **Total: 19 Points** (14 points for basic implementation + 5 points for bonus)
 
