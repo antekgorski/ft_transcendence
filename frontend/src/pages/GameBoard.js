@@ -336,13 +336,8 @@ function Body() {
             const activeGame = activeGameResponse.data;
             const mode = activeGame.game_type || 'ai';
 
-            // Issue 2 fix: when explicitly starting AI, skip any stale PvP active game
-            if (location.state?.startAI && mode === 'pvp') {
-              // Fall through to AI game creation below
-              // The backend create endpoint also auto-clears pending PvP games
-            } else {
-              currentGameId = activeGameResponse.data.id;
-              const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
+            currentGameId = activeGameResponse.data.id;
+            const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
 
               // Set game mode & opponent name from active game metadata
               setGameMode(mode);
@@ -472,10 +467,9 @@ function Body() {
                 setStatusMessage('Place your ships on your board.');
               }
 
-              setError(null);
-              setGameLoading(false);
-              return;
-            } // end of else (not skipping PvP)
+            setError(null);
+            setGameLoading(false);
+            return;
           }
         } catch (activeErr) {
           if (activeErr.response?.status !== 404) {
