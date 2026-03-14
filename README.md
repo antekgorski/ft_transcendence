@@ -451,32 +451,64 @@ Scoring rule used in this section: **Major = 2 points**, **Minor = 1 point**.
 
 # Individual Contributions
 
-## agorski
-- **Primary contributions:** Project setup, GitHub Issues workflow, backend support, OAuth integration support.
-- **Specific features/modules:** Standard authentication module (shared), OAuth 2.0 flow (shared), project planning artifacts.
-- **Challenges and resolution:** Integration alignment between frontend login states and backend session flow; resolved through iterative API contract updates and coordinated review.
+## Dominik Modrzejewski (dmodrzej / Dominik / hipoliciak)
 
-## dmodrzej
-- **Primary contributions:** Infrastructure architecture, WebSocket gameplay core, AI opponent, production deployment.
-- **Specific features/modules:** Real-time module, Battleship game core, remote-player synchronization, AI Opponent, Docker/Compose and VPS pipeline.
-- **Challenges and resolution:** Race conditions and reconnect edge cases in PvP sessions; resolved by tightening server-side state transitions, adding timeout handling, and refining Redis-backed coordination.
+- **Scope:** Backend architecture, infrastructure, security, and core game mechanics.
+- Implemented and stabilized Django backend logic (including race-condition fixes and error handling improvements).
+- Implemented and improved WebSocket communication for real-time gameplay.
+- Developed core game mechanics for PvP and AI modes (consumers, views, synchronization logic).
+- Implemented session management rules, including single active login per user.
+- Built and refined PvP invitation flow and in-game chat features.
+- Integrated and extended Redis-based game/session state management.
+- Contributed to frontend game integration (GameBoard and socket flow), including mobile/UI fixes.
+- Configured infrastructure components (Nginx, Docker Compose, environment setup, deployment workflow).
+- Improved security-related behavior (cookies, HTTPS-related configuration, CSRF handling, token/auth flows).
+- Prepared infrastructure documentation and architecture diagrams (README + Mermaid).
+- **Challenges faced and resolution:** Real-time synchronization and race conditions in multiplayer flow were resolved through stricter backend state transitions, Redis coordination, and iterative WebSocket event handling refinements.
 
-## ltomasze
-- **Primary contributions:** Django backend development for auth/game endpoints and integration.
-- **Specific features/modules:** Registration/login/profile flows, user management module (shared), game-related API endpoints.
-- **Challenges and resolution:** Validation consistency between frontend and backend; resolved by enforcing backend-first validation rules and aligning frontend form constraints with API responses.
+## Łukasz Tomaszewski (ltomasze / Lukasz)
 
-## mbany
-- **Primary contributions:** React UI implementation and gameplay-oriented frontend integration.
-- **Specific features/modules:** Core interface views, game flow screens, social/notification UI integration, profile and auth screens.
-- **Challenges and resolution:** Keeping UI state in sync with real-time events; resolved by centralizing state updates and standardizing message handling patterns.
+- **Scope:** Authentication backend, database integration, and matchmaking.
+- Implemented backend endpoints for registration and login flows.
+- Configured and integrated PostgreSQL (Neon) with the application backend.
+- Implemented PvP matchmaking queue logic.
+- Added UI switching support for PvP mode integration.
+- Contributed Docker Compose configuration fixes for reliable local/dev startup.
+- **Challenges faced and resolution:** Matching backend auth/matchmaking behavior with frontend expectations required endpoint and payload adjustments; this was solved through iterative API updates and integration testing.
 
-## gbuczyns
-- **Primary contributions:** Frontend feature development and API integration.
-- **Specific features/modules:** User profile views, social interaction screens, game history/statistics presentation.
-- **Challenges and resolution:** Coordinating evolving backend payload shapes with stable UI rendering; resolved via serializer-driven adjustments and incremental frontend compatibility fixes.
+## Grzegorz Buczyński (gbuczyns / GrzegorzBuczynski / Surface)
 
-## Team-level collaboration notes
-- Code reviews were used for critical gameplay and authentication changes.
-- Work was tracked in issues and discussed during weekly sync meetings.
-- Cross-module blockers (auth ↔ websocket ↔ UI) were handled jointly to keep integration stable.
+- **Scope:** Frontend UI structure, routing, and leaderboard experience.
+- Implemented leaderboard functionality and related UI presentation.
+- Built and refined RouterPage navigation and user flow structure.
+- Added interface controls/buttons and improved overall component layout.
+- Improved React logic in selected components (including useEffect behavior).
+- Cleaned and standardized code comments/documentation style (PL → EN where needed).
+- Contributed Docker/environment configuration fixes (.env handling and port consistency).
+- **Challenges faced and resolution:** Maintaining stable UI behavior while logic evolved was addressed by simplifying component flow and applying incremental refactors to state/effect logic.
+
+## Michał (mbany / Michalkcb)
+
+- **Scope:** Friends system, frontend auth flow, and project structure contributions.
+- Implemented friend-related features: user search and add-friend flow.
+- Implemented functional frontend login and registration integration.
+- Integrated GameBoard with the broader application flow.
+- Contributed to project description and role-distribution documentation.
+- **Challenges faced and resolution:** Integrating social/auth/game flows in a consistent UX required coordination across screens and endpoints; solved through staged integration and UI/flow corrections.
+
+## Antoni Górski (agorski / Antoni Gorski / antekgorski)
+
+- **Scope:** User-facing features, admin-related work, and 42 authentication integration.
+- Implemented user avatar functionality.
+- Developed and improved admin-related page/features.
+- Contributed fixes and improvements in login/authentication behavior.
+- Integrated 42 OAuth authentication flow.
+- Delivered feature-branch work for auth-related development (e.g., 42 authentication branch flow).
+- Contributed to README evolution and documentation updates.
+- **Challenges faced and resolution:** Third-party authentication integration and account-flow consistency were resolved through iterative callback/login fixes and branch-level testing.
+
+## Team-level collaboration and delivery notes
+
+- The team used feature branches and pull requests for integration into shared branches.
+- Work was coordinated across backend, frontend, and infrastructure domains with role-aligned ownership.
+- Cross-cutting blockers (real-time sync, auth-state consistency, deployment reliability) were resolved through iterative fixes, shared testing, and review-driven adjustments.
