@@ -1,6 +1,5 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import API_BASE_URL from '../config';
 import api from '../utils/api';
 import { AuthContext } from '../contexts/AuthContext';
 import { SiteFooter } from './Components';
@@ -16,6 +15,7 @@ function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [success, setSuccess] = useState('');
 
   const handleInputChange = (e) => {
@@ -82,6 +82,30 @@ function RegisterPage() {
 
     return () => clearTimeout(timer);
   }, [success, navigate]);
+
+  const handleOAuthSignup = async () => {
+    setError('');
+    setSuccess('');
+    setOauthLoading(true);
+
+    try {
+      const response = await api.get('/auth/oauth/42/start/');
+      const data = response.data;
+
+      if (data?.ok && data?.authorize_url) {
+        window.location.href = data.authorize_url;
+        return;
+      }
+
+      setError(data?.error || '42 authentication is temporarily unavailable. Please try again later.');
+    } catch (err) {
+      const errorMsg = err.response?.data?.error ||
+        '42 authentication is temporarily unavailable. Please try again later.';
+      setError(errorMsg);
+    } finally {
+      setOauthLoading(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-slate-900 to-blue-900">
@@ -185,11 +209,12 @@ function RegisterPage() {
 
               <button
                 type="button"
-                onClick={() => window.location.href = `${API_BASE_URL}/auth/oauth/42/start/`}
+                onClick={handleOAuthSignup}
+                disabled={oauthLoading || loading}
                 className="w-full py-3 bg-blue-600 text-white font-bold uppercase rounded-md
-                           hover:bg-blue-700 transition-all"
+                           hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
-                Sign up with 42
+                {oauthLoading ? 'CONNECTING TO 42...' : 'Sign up with 42'}
               </button>
 
               <p className="text-center text-gray-600 mt-2">

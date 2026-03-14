@@ -1,12 +1,12 @@
-import React, { useState, useContext } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import API_BASE_URL from '../config';
+import React, { useState, useContext, useEffect } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
 import api from '../utils/api';
 import { SiteFooter } from './Components';
 
 function WelcomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { checkAuth } = useContext(AuthContext);
   const [formData, setFormData] = useState({
     username: '',
@@ -14,7 +14,18 @@ function WelcomePage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const oauthError = params.get('oauth_error');
+
+    if (oauthError) {
+      setError(oauthError);
+      navigate('/', { replace: true });
+    }
+  }, [location.search, navigate]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -61,6 +72,30 @@ function WelcomePage() {
       setError(errorMsg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOAuthLogin = async () => {
+    setError('');
+    setSuccess('');
+    setOauthLoading(true);
+
+    try {
+      const response = await api.get('/auth/oauth/42/start/');
+      const data = response.data;
+
+      if (data?.ok && data?.authorize_url) {
+        window.location.href = data.authorize_url;
+        return;
+      }
+
+      setError(data?.error || '42 authentication is temporarily unavailable. Please try again later.');
+    } catch (err) {
+      const errorMsg = err.response?.data?.error ||
+        '42 authentication is temporarily unavailable. Please try again later.';
+      setError(errorMsg);
+    } finally {
+      setOauthLoading(false);
     }
   };
 
@@ -137,11 +172,12 @@ function WelcomePage() {
 
               <button
                 type="button"
-                onClick={() => window.location.href = `${API_BASE_URL}/auth/oauth/42/start/`}
+                onClick={handleOAuthLogin}
+                disabled={oauthLoading || loading}
                 className="w-full py-3 bg-blue-600 text-white font-bold uppercase rounded-md
-                           hover:bg-blue-700 transition-all"
+                           hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
-                Sign in with 42
+                {oauthLoading ? 'CONNECTING TO 42...' : 'Sign in with 42'}
               </button>
 
               <p className="text-center text-gray-600 mt-2">
