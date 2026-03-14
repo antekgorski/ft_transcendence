@@ -299,7 +299,7 @@ erDiagram
     
     PlayerStats {
         uuid id PK
-        uuid user_id FK UK
+        uuid user_id FK "UK"
         int games_played
         int games_won
         int games_lost
