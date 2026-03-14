@@ -56,4 +56,4 @@ re: clean build up
 admin:
 	$(DOCKER_COMPOSE) exec backend python manage.py createsuperuser
 
-.PHONY: all build up down restart restart_frontend restart_backend restart_redis logs clean re admin
+.PHONY: all build up down restart restart_frontend restart_backend restart_redis restart_nginx rebuild_frontend rebuild_backend rebuild_redis rebuild_nginx logs clean re admin
