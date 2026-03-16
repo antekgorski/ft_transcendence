@@ -11,4 +11,6 @@ urlpatterns = [
     path('api/social/', include('social.urls')),
     # Serve media files (avatars, etc.) - works in both dev and production
     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    # Serve collected static files (including Django admin assets)
+    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
 ]

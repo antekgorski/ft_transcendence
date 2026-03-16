@@ -386,13 +386,22 @@ class GameViewSet(viewsets.ModelViewSet):
     def create(self, request):
         """Create a new game."""
         user = request.user
+        game_type_req = request.data.get('game_type', 'ai')
+        force_new_ai = str(request.data.get('force_new', '')).lower() in ('1', 'true', 'yes', 'on')
         
         # Check if user is already in an active game
         active_game_id = self.redis_manager.get_active_game(user.id)
         
         if active_game_id:
             game_meta = self.redis_manager.get_game_meta(active_game_id)
-            game_type_req = request.data.get('game_type', 'ai')
+
+            # Stale active-game pointer without metadata: clear and continue.
+            if not game_meta:
+                self.redis_manager.remove_active_game(user.id)
+                active_game_id = None
+
+        if active_game_id:
+            game_meta = self.redis_manager.get_game_meta(active_game_id)
             # Auto-clear a stale pending PvP game when the user wants to start AI
             if game_meta and game_meta.get('game_type') == 'pvp' and game_meta.get('status') == 'pending' and game_type_req == 'ai':
                 logger.info('Auto-clearing stale pending PvP game %s for user %s before AI game creation', active_game_id, user.id)
@@ -403,6 +412,24 @@ class GameViewSet(viewsets.ModelViewSet):
                     self.redis_manager.remove_active_game(p2_id)
                 self.redis_manager.clear_placement_timer_start(active_game_id)
                 self._notify_game_cancelled(active_game_id, reason='player_left')
+            elif game_meta and game_meta.get('game_type') == 'ai' and game_type_req == 'ai':
+                if force_new_ai:
+                    logger.info('Force-creating a new AI game for user %s, replacing active AI game %s', user.id, active_game_id)
+                    self._record_ai_forfeit(active_game_id, user, game_meta)
+                    self.redis_manager.delete_game(active_game_id)
+                    self.redis_manager.remove_active_game(user.id)
+                else:
+                # Idempotent AI game creation: if user already has an active AI game,
+                # return it instead of a 409 conflict.
+                    return Response({
+                        'id': game_meta.get('game_id'),
+                        'player_1': game_meta.get('player_1_id'),
+                        'player_2': game_meta.get('player_2_id'),
+                        'game_type': game_meta.get('game_type'),
+                        'status': game_meta.get('status'),
+                        'created_at': game_meta.get('created_at'),
+                        'active': True,
+                    }, status=status.HTTP_200_OK)
             else:
                 return Response(
                     {'error': 'User is already in a game'},

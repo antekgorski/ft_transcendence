@@ -26,6 +26,12 @@ class GameSocket {
   connect(gameId, onConnect, onError, options = {}) {
     // If game ID changed, close old socket and create new one
     if (this.gameId && this.gameId !== gameId && this.socket) {
+      // Intentional game switch: prevent old onclose handler from triggering
+      // reconnect to the previous game ID.
+      this.socket.onclose = null;
+      this.socket.onerror = null;
+      this.stopHeartbeat();
+      this.reconnectAttempts = 0;
       this.socket.close();
       this.socket = null;
     }
