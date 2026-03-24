@@ -59,6 +59,7 @@ function DisplayNameEditor() {
       {isEditing && (
         <div className="mt-4">
           <input
+            id="display-name-input"
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}

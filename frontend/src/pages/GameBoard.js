@@ -24,6 +24,9 @@ const CELL_TYPES = {
   MISS: 'miss',
 };
 
+// Shared guard across re-renders/remounts to prevent duplicate AI game creation POSTs.
+let aiGameCreateInFlight = null;
+
 // Funkcja pomocnicza tworząca pustą planszę 10x10.
 const createEmptyBoard = () => {
   // Tworzymy tablicę wierszy o długości BOARD_SIZE.
@@ -127,6 +130,7 @@ function Body() {
   // Navigation confirmation (leaving = forfeit during active game)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [pendingLeaveAction, setPendingLeaveAction] = useState(null); // 'menu' or 'logout'
+  const leaveFlowTokenRef = useRef(0);
 
   // Stan dla WebSocket i gameplay
   const [isMyTurn, setIsMyTurn] = useState(false);
@@ -336,11 +340,12 @@ function Body() {
             const activeGame = activeGameResponse.data;
             const mode = activeGame.game_type || 'ai';
 
-            // Issue 2 fix: when explicitly starting AI, skip any stale PvP active game
-            if (location.state?.startAI && mode === 'pvp') {
-              // Fall through to AI game creation below
-              // The backend create endpoint also auto-clears pending PvP games
-            } else {
+            // Skip stale pending PvP games when the user explicitly requests an AI
+            // game. The backend auto-clears the pending PvP game when the POST
+            // /games/ request arrives with game_type='ai'.
+            const shouldSkipStalePvP = location.state?.startAI && mode === 'pvp' && activeGame.status === 'pending';
+
+            if (!shouldSkipStalePvP) {
               currentGameId = activeGameResponse.data.id;
               const isP1 = activeGame.player_1 === user.id?.toString() || activeGame.player_1 === user.id;
 
@@ -475,7 +480,7 @@ function Body() {
               setError(null);
               setGameLoading(false);
               return;
-            } // end of else (not skipping PvP)
+            }
           }
         } catch (activeErr) {
           if (activeErr.response?.status !== 404) {
@@ -494,11 +499,24 @@ function Body() {
         let newGameId = null;
         try {
           setIsCreatingGame(true);
-          const response = await axios.post(
+
+          // If another initialize flow is already creating an AI game,
+          // wait for it and then re-run initialization from active game state.
+          if (aiGameCreateInFlight) {
+            await aiGameCreateInFlight.catch(() => null);
+            setIsCreatingGame(false);
+            initializingRef.current = false;
+            await initializeGame();
+            return;
+          }
+
+          aiGameCreateInFlight = axios.post(
             `${API_BASE_URL}/games/`,
             { game_type: 'ai' },
             { withCredentials: true }
           );
+
+          const response = await aiGameCreateInFlight;
           newGameId = response.data.id;
           setGameId(newGameId);
           setGameInitialized(true);
@@ -653,6 +671,8 @@ function Body() {
 
           setIsCreatingGame(false);
           throw createErr;
+        } finally {
+          aiGameCreateInFlight = null;
         }
         setIsCreatingGame(false);
 
@@ -767,8 +787,11 @@ function Body() {
     };
 
     const setupSocketHandlers = () => {
+      const handlerGameId = gameId;
+
       // Handle game move responses (opponent's shot result or our shot result)
       gameSocket.on('game_move', (data) => {
+        if (gameIdRef.current !== handlerGameId) return;
         if (data.move_type === 'shot') {
           const { row, col, result, sunk, sunk_ship: sunkShip, inactive } = data.data; // result: 'hit' or 'miss'
 
@@ -847,6 +870,7 @@ function Body() {
 
       // Handle game ended
       gameSocket.on('game_ended', (data) => {
+        if (gameIdRef.current !== handlerGameId) return;
         setOpponentDisconnectedNotice(false);
         setOpponentReconnectCountdown(null);
         if (disconnectTimerRef.current) { clearInterval(disconnectTimerRef.current); disconnectTimerRef.current = null; }
@@ -866,6 +890,7 @@ function Body() {
 
       // Handle game forfeit
       gameSocket.on('game_forfeit', (data) => {
+        if (gameIdRef.current !== handlerGameId) return;
         setOpponentDisconnectedNotice(false);
         setOpponentReconnectCountdown(null);
         if (disconnectTimerRef.current) { clearInterval(disconnectTimerRef.current); disconnectTimerRef.current = null; }
@@ -1659,30 +1684,35 @@ function Body() {
       return;
     }
 
+    const forfeitedGameId = gameId;
+
+    // Set local loss state immediately so async backend completion cannot re-open the modal later.
+    setGameResult('lose');
+    setRedirectCountdown(3);
+    setStatusMessage('Game forfeited. You lose!');
+
     try {
       // Send forfeit via WebSocket
       gameSocket.sendForfeit();
 
       await axios.post(
-        `${API_BASE_URL}/games/${gameId}/forfeit/`,
+        `${API_BASE_URL}/games/${forfeitedGameId}/forfeit/`,
         {},
         { withCredentials: true }
       );
 
       // Clean up localStorage when game ends
-      localStorage.removeItem(`game_${gameId}_ships`);
-
-      setGameResult('lose');
-      setRedirectCountdown(3);
-      setStatusMessage('Game forfeited. You lose!');
+      localStorage.removeItem(`game_${forfeitedGameId}_ships`);
     } catch (err) {
-      setStatusMessage(err.response?.data?.error || 'Error forfeiting game. Please try again.');
-      setShowForfeitConfirm(false);
+      // Keep local forfeit result; backend sync can fail if game was already ended by WS.
     }
   };
 
   // Funkcja resetowania gry do nowej rozgrywki
   const resetGameForNewRound = () => {
+    // Cancel any in-flight async leave->navigate flow.
+    leaveFlowTokenRef.current += 1;
+
     // For PvP games, redirect to menu instead of auto-creating a new AI game
     if (gameMode === 'pvp') {
       gameSocket.reset();
@@ -1690,7 +1720,13 @@ function Body() {
       return;
     }
 
-    // Reset WebSocket state for new game (clears game ended flag)
+    // Lock initialization to avoid parallel initializeGame() race while we are rebuilding state.
+    initializingRef.current = true;
+
+    // Leave old game room and close old socket to avoid late events (e.g. old forfeit/game_ended)
+    // reopening result modal during fresh game creation.
+    gameSocket.send({ type: 'leave_game' });
+    gameSocket.disconnect();
     gameSocket.reset();
 
     // Clear all game state
@@ -1710,7 +1746,6 @@ function Body() {
     setChatMessages([]);
     setGameMode('ai');
     setOpponentName('AI');
-    initializingRef.current = false;
     setGameLoading(true);
 
     // Reinitialize game
@@ -1718,18 +1753,24 @@ function Body() {
       try {
         const response = await axios.post(
           `${API_BASE_URL}/games/`,
-          { game_type: 'ai' },
+          { game_type: 'ai', force_new: true },
           { withCredentials: true }
         );
-        setGameId(response.data.id);
+        const newGameId = response.data.id;
+        setGameId(newGameId);
         setGameInitialized(true);
         setStatusMessage('Game created! Place your ships on your board.');
         setError(null);
+
+        // Join the new game room early (during ship placement) so leave/forfeit signals
+        // always target the current game.
+        gameSocket.connect(newGameId);
       } catch (err) {
         const errorMsg = err.response?.data?.error || err.response?.data?.detail || 'Failed to create game';
         setError(errorMsg);
         setStatusMessage('Error creating game. Please try again.');
       } finally {
+        initializingRef.current = false;
         setGameLoading(false);
       }
     };
@@ -1784,13 +1825,13 @@ function Body() {
           attempts += 1;
         }
 
-        // Jeśli nie udało się umieścić tego statku, przerywamy tę próbę ustawienia
+        // If we failed to place this ship after many attempts, break out and try a new full board attempt
         if (!placed) {
           break;
         }
       }
 
-      // Jeśli udało się umieścić wszystkie statki, kończymy pętlę
+      // If we successfully placed all ships, break out of the loop
       if (attemptShips.length === shipSizes.length) {
         newPlacedShips = attemptShips;
         break;
@@ -1799,7 +1840,7 @@ function Body() {
       remainingBoardAttempts -= 1;
     }
 
-    // Jeśli po wielu próbach nadal nie udało się rozmieścić wszystkich statków, zgłaszamy błąd
+    // If after many attempts we still couldn't place all ships, report an error
     if (newPlacedShips.length !== shipSizes.length) {
       setStatusMessage('Error: Unable to place all ships randomly. Please try again.');
       setPlayerBoard(cleanBoard);
@@ -2186,7 +2227,10 @@ function Body() {
               <button
                 className="w-full sm:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-semibold transition-colors"
                 onClick={async () => {
+                  const flowToken = ++leaveFlowTokenRef.current;
+                  const action = pendingLeaveAction;
                   setShowLeaveConfirm(false);
+                  setPendingLeaveAction(null);
                   // Forfeit the game first
                   if (gameId) {
                     try {
@@ -2201,11 +2245,13 @@ function Body() {
                       // Continue with navigation even if forfeit fails
                     }
                   }
-                  if (pendingLeaveAction === 'menu') {
+                  if (leaveFlowTokenRef.current !== flowToken) {
+                    return;
+                  }
+                  if (action === 'menu') {
                     navigate('/menu');
                   }
                   // 'logout' is handled by Components.js LogoutButton
-                  setPendingLeaveAction(null);
                 }}
               >
                 Forfeit & Leave

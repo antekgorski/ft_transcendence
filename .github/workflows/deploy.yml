@@ -1,0 +1,89 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+      REMOTE_PATH: ${{ secrets.DEPLOY_REMOTE_PATH }}
+      DOCKER_HUB_USER: ${{ secrets.DOCKER_HUB_USER }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build images
+        run: |
+          docker build -t "$DOCKER_HUB_USER/ft_transcendence_nginx:latest" ./nginx
+          docker build -t "$DOCKER_HUB_USER/ft_transcendence_redis:latest" ./redis
+          docker build -t "$DOCKER_HUB_USER/ft_transcendence_backend:latest" ./backend
+          docker build -t "$DOCKER_HUB_USER/ft_transcendence_frontend:latest" ./frontend
+
+      - name: Push images
+        run: |
+          docker push "$DOCKER_HUB_USER/ft_transcendence_nginx:latest"
+          docker push "$DOCKER_HUB_USER/ft_transcendence_redis:latest"
+          docker push "$DOCKER_HUB_USER/ft_transcendence_backend:latest"
+          docker push "$DOCKER_HUB_USER/ft_transcendence_frontend:latest"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Create prod.env
+        run: |
+          if [ -z "${{ secrets.PROD_ENV_FILE }}" ]; then
+            echo "PROD_ENV_FILE secret is not set"
+            exit 1
+          fi
+
+          umask 077
+          printf '%s' "${{ secrets.PROD_ENV_FILE }}" > prod.env
+
+      - name: Upload deploy files
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_PATH'"
+          scp -P "$SSH_PORT" docker-compose.prod.yml "$SSH_USER@$SSH_HOST:$REMOTE_PATH/docker-compose.prod.yml"
+          scp -P "$SSH_PORT" nginx/nginx.prod.conf "$SSH_USER@$SSH_HOST:$REMOTE_PATH/nginx.prod.conf"
+          scp -P "$SSH_PORT" prod.env "$SSH_USER@$SSH_HOST:$REMOTE_PATH/prod.env"
+
+      - name: Deploy on VPS
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" << EOF
+            set -e
+            cd "$REMOTE_PATH"
+
+            cp prod.env .env
+            export DOCKER_HUB_USER="$DOCKER_HUB_USER"
+
+            if command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE="docker-compose"
+            else
+              COMPOSE="docker compose"
+            fi
+
+            $COMPOSE -f docker-compose.prod.yml down --remove-orphans
+            $COMPOSE -f docker-compose.prod.yml pull
+            $COMPOSE -f docker-compose.prod.yml up -d --force-recreate
+          EOF

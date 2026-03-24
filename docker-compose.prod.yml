@@ -52,7 +52,7 @@ services:
       - redis
     networks:
       - transcendence_network
-    command: daphne -b 0.0.0.0 -p 8000 project_config.asgi:application
+    command: sh -c "python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p 8000 project_config.asgi:application"
 
   frontend:
     image: ${DOCKER_HUB_USER}/ft_transcendence_frontend:latest
