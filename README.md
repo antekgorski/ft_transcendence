@@ -20,7 +20,7 @@ _This project has been created as part of the 42 curriculum by dmodrzej[, agorsk
 
 # Description
 
-**Online Tactical Battleship** is the final project of the 42 Common Core.
+**"Battleships - Tactical Online Game"** is the final project of the 42 Common Core.
 Our team has developed a high-end, web-based **Online Battleship** platform.
 The project features a real-time multiplayer engine, an AI strategic opponent,
 and a sleek UI.
@@ -69,7 +69,7 @@ and a sleek UI.
    make re
    ```
 
-4. Access your app via browser under URL and port defined in .env file
+4. Access your app via browser under URL and port defined.
 
 ---
 
